@@ -38,6 +38,7 @@ export function basename(path: string | undefined): string {
 const PALETTE = ["#4e9af1", "#f28e2b", "#59a14f", "#e15759", "#b07aa1", "#76b7b2", "#edc948", "#ff9da7", "#9c755f", "#bab0ac"];
 const FIXED: Record<string, string> = {
   session: "#e8e8e8", ok: "#59a14f", error: "#e15759",
+  claude: "#f28e2b", codex: "#4e9af1", opencode: "#59a14f", cliproxyapi: "#b07aa1", chatgpt: "#edc948",
   llm: "#4e9af1", tool: "#f28e2b", agent: "#b07aa1", event: "#76b7b2",
 };
 export function colour(key: string): string {
