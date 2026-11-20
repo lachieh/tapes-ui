@@ -1,0 +1,72 @@
+:root {
+  color-scheme: dark;
+  --bg: #0d0f12;
+  --panel: #15181d;
+  --line: #262b33;
+  --text: #e6e8eb;
+  --muted: #8b939e;
+  --accent: #4e9af1;
+  --error: #e15759;
+  font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button, select, input { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.3rem 0.6rem; }
+button { cursor: pointer; }
+button.link { background: none; border: 0; padding: 0; color: var(--accent); text-align: left; }
+pre { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.75rem; overflow: auto; max-height: 60vh; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+.muted { color: var(--muted); }
+.error { color: var(--error); }
+
+header.top { display: flex; align-items: center; gap: 2rem; padding: 0.6rem 1.25rem; border-bottom: 1px solid var(--line); }
+header.top h1 { font-size: 1.1rem; margin: 0; letter-spacing: 0.02em; }
+header.top nav { display: flex; gap: 1.25rem; }
+header.top nav a { color: var(--muted); }
+header.top nav a.active { color: var(--text); }
+
+.page { padding: 1rem 1.25rem; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin-bottom: 0.75rem; }
+.toolbar input[type="search"] { flex: 1; max-width: 40rem; }
+
+.stats { display: flex; gap: 2rem; margin-bottom: 1rem; }
+.stat b { display: block; font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 12px; }
+
+table.sessions { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
+table.sessions th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; border-bottom: 1px solid var(--line); padding: 0.4rem; }
+table.sessions td { border-bottom: 1px solid var(--line); padding: 0.4rem; vertical-align: top; }
+table.sessions td.title { max-width: 42rem; }
+table.sessions td.title a { display: inline-block; max-width: 34rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.dot { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 50%; margin-right: 0.4rem; }
+.live { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: #59a14f; margin-right: 0.4rem; box-shadow: 0 0 6px #59a14f; }
+.badge { margin-left: 0.5rem; font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 0.3rem; }
+.badge.failed, .badge.error { color: var(--error); }
+
+.session-head h2 { margin: 0 0 0.25rem; font-size: 1.15rem; }
+.session-head { margin-bottom: 1rem; }
+.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.25rem; }
+@media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
+ol.turns { list-style: none; margin: 0; padding: 0; }
+ol.turns li a { display: block; padding: 0.5rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 0.4rem; color: var(--text); }
+ol.turns li.active a { border-color: var(--accent); }
+ol.turns .prompt, ol.turns .response { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ol.turns .response { color: var(--muted); }
+.spans h3 { font-size: 0.95rem; margin: 0 0 0.5rem; }
+.spans ul { list-style: none; padding: 0; margin: 0 0 1rem; max-height: 40vh; overflow: auto; }
+.spans li { padding: 0.15rem 0; }
+
+ol.results li { margin-bottom: 0.75rem; }
+.snippet { margin: 0.2rem 0 0; color: var(--muted); }
+
+.map-page { display: flex; flex-direction: column; height: calc(100vh - 2.9rem); }
+.map-toolbar { padding: 0.6rem 1.25rem; margin: 0; border-bottom: 1px solid var(--line); }
+.map-body { position: relative; flex: 1; min-height: 0; }
+.graph { position: absolute; inset: 0; }
+.legend { position: absolute; left: 1rem; bottom: 1rem; list-style: none; margin: 0; padding: 0.5rem 0.75rem; background: rgba(21, 24, 29, 0.85); border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
+.node-panel { position: absolute; right: 1rem; top: 1rem; width: 22rem; padding: 0.75rem 1rem; background: rgba(21, 24, 29, 0.95); border: 1px solid var(--line); border-radius: 6px; }
+.node-panel p { margin: 0.4rem 0 0.6rem; word-break: break-word; }
+.node-panel .close { position: absolute; right: 0.5rem; top: 0.4rem; border: 0; background: none; font-size: 1.1rem; }
