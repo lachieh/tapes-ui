@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { colour, cost, count, duration } from "../format";
 import { href } from "../hooks";
 import {
-  isTinySession, laneGroups, nights, RANGES, sessionTitle, ticks, TINY_SESSION_SPANS, type Lane, type LaneGroup, type RangeKey, type Timeline, type TimelineSession,
+  isTinySession, laneGroups, nights, RANGES, sessionTitle, ticks, type Lane, type LaneGroup, type RangeKey, type Timeline, type TimelineSession,
   type TimelineTurn,
 } from "../timeline/data";
 import { sessionQuery, timelineQuery, type TimelineWindow } from "../queries";
@@ -94,8 +94,8 @@ export function TimelineView({ params, layoutSwitch }: { params: URLSearchParams
           value={text}
           onChange={(e) => set({ q: e.currentTarget.value || undefined })}
         />
-        <label title={`Sessions with one turn of ${TINY_SESSION_SPANS} spans or fewer (or under 30 seconds when spans are not counted yet), such as title and branch-name generators`}>
-          <input type="checkbox" checked={showTiny} onChange={(e) => set({ all: e.currentTarget.checked ? "1" : undefined })} /> Tiny sessions{" "}
+        <label title="Sessions of up to three turns that each took under 30 seconds, such as title and branch-name generators">
+          <input type="checkbox" checked={showTiny} onChange={(e) => set({ all: e.currentTarget.checked ? "1" : undefined })} /> Short sessions{" "}
           {data.data && <span class="muted">{tinyCount}</span>}
         </label>
         <span class="toolbar-status muted" aria-live="polite">
