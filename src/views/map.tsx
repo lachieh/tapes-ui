@@ -24,10 +24,22 @@ const EDGE_COLOUR: Record<MapEdge["type"], string> = {
   flow: "rgba(242,142,43,0.5)",
 };
 
+// Bursts of short-lived sessions with no derived turns can fill the newest
+// pages, so page past them (bounded) until `n` sessions have turns.
+async function recentSessionsWithTurns(n: number, signal: AbortSignal): Promise<string[]> {
+  const ids: string[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < 10 && ids.length < n; page++) {
+    const res = await api.sessions({ limit: 200, cursor }, signal);
+    ids.push(...res.items.filter((s) => s.rollup.turn_count > 0).map((s) => s.id));
+    if (!res.next_cursor) break;
+    cursor = res.next_cursor;
+  }
+  return ids.slice(0, n);
+}
+
 async function loadSessions(opts: Options, signal: AbortSignal, progress: (n: number, of: number) => void) {
-  const ids = opts.session
-    ? [opts.session]
-    : (await api.sessions({ limit: opts.sessions }, signal)).items.filter((s) => s.rollup.turn_count > 0).map((s) => s.id);
+  const ids = opts.session ? [opts.session] : await recentSessionsWithTurns(opts.sessions, signal);
   const out: SessionTraces[] = [];
   // A few at a time: each request derives a page of spans server-side.
   for (let i = 0; i < ids.length; i += 4) {
@@ -91,7 +103,8 @@ export function MapView({ params }: { params: URLSearchParams }) {
         {data.state === "error" && <span class="error">{data.error}</span>}
       </div>
       <div class="map-body">
-        {graph && <Graph nodes={graph.nodes} links={graph.links} onSelect={setSelected} />}
+        {graph?.nodes.length === 0 && <p class="page muted">No sessions with derived turns found.</p>}
+        {graph && graph.nodes.length > 0 && <Graph nodes={graph.nodes} links={graph.links} onSelect={setSelected} />}
         <Legend />
         {selected && <NodePanel node={selected} onClose={() => setSelected(undefined)} />}
       </div>
