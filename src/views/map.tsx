@@ -1,7 +1,7 @@
 import ForceGraph3D, { type ForceGraph3DInstance } from "3d-force-graph";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { api, sessionTracesUpTo, type SessionTraces } from "../api";
-import { colour, shortId } from "../format";
+import { colour, escapeHtml, shortId } from "../format";
 import { href, useLoad } from "../hooks";
 import { buildGraph, type MapEdge, type MapNode } from "../map/graph";
 
@@ -117,7 +117,7 @@ function Graph({ nodes, links, onSelect }: { nodes: MapNode[]; links: MapEdge[];
     const g = new ForceGraph3D(container) as unknown as ForceGraph3DInstance<MapNode, MapEdge>;
     g.backgroundColor("#0d0f12")
       .showNavInfo(false)
-      .nodeLabel((n) => `${n.type}: ${n.label}`)
+      .nodeLabel((n) => escapeHtml(`${n.type}: ${n.label}`))
       .nodeColor((n) => colour(n.type === "session" ? "session" : n.colourKey))
       .nodeVal((n) => n.val)
       .nodeOpacity(0.9)
