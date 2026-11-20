@@ -1,14 +1,13 @@
 import ForceGraph3D, { type ForceGraph3DInstance } from "3d-force-graph";
+import { useQuery } from "@tanstack/preact-query";
 import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { api, sessionTracesUpTo, type SessionTraces } from "../api";
 import { colour, escapeHtml, shortId } from "../format";
-import { href, useLoad } from "../hooks";
+import { href } from "../hooks";
 import { buildGraph, type MapEdge, type MapNode } from "../map/graph";
+import { sessionMapQuery } from "../queries";
 import { EmbeddingMap } from "./embedding-map";
-
-const MAX_SESSION_PAGES = 10;
-const CONCURRENT_SESSION_LOADS = 4;
+import { QueryError } from "./status";
 
 interface Options {
   session?: string;
@@ -25,35 +24,12 @@ const EDGE_COLOUR: Record<MapEdge["type"], string> = {
   flow: "rgba(242,142,43,0.5)",
 };
 
-async function recentSessionsWithTurns(n: number, signal: AbortSignal): Promise<string[]> {
-  const ids: string[] = [];
-  let cursor: string | undefined;
-  for (let page = 0; page < MAX_SESSION_PAGES && ids.length < n; page++) {
-    const res = await api.sessions({ limit: 200, cursor }, signal);
-    ids.push(...res.items.filter((s) => s.rollup.turn_count > 0).map((s) => s.id));
-    if (!res.next_cursor) break;
-    cursor = res.next_cursor;
-  }
-  return ids.slice(0, n);
-}
-
-async function loadSessions(opts: Options, signal: AbortSignal, progress: (n: number, of: number) => void) {
-  const ids = opts.session ? [opts.session] : await recentSessionsWithTurns(opts.sessions, signal);
-  const out: SessionTraces[] = [];
-  for (let i = 0; i < ids.length; i += CONCURRENT_SESSION_LOADS) {
-    const batch = await Promise.all(ids.slice(i, i + CONCURRENT_SESSION_LOADS).map((id) => sessionTracesUpTo(id, opts.turns, signal)));
-    out.push(...batch);
-    progress(out.length, ids.length);
-  }
-  return out;
-}
-
 export function MapView({ params }: { params: URLSearchParams }) {
   const embedding = params.get("layout") === "embedding";
   const layoutSwitch = (
     <span class="segmented" role="group" aria-label="Layout">
-      <a href={href("/map")} class={embedding ? "" : "active"}>Structure</a>
-      <a href={href("/map", { layout: "embedding" })} class={embedding ? "active" : ""}>Embedding</a>
+      <a href={href("/map")} aria-current={embedding ? undefined : "true"}>Structure</a>
+      <a href={href("/map", { layout: "embedding" })} aria-current={embedding ? "true" : undefined}>Embedding</a>
     </span>
   );
   return embedding
@@ -74,13 +50,10 @@ function StructureMap({ params, layoutSwitch }: { params: URLSearchParams; layou
   };
 
   const [progress, setProgress] = useState("");
-  const data = useLoad(
-    (signal) => loadSessions(opts, signal, (n, of) => setProgress(`${n}/${of} sessions`)),
-    [opts.session, opts.sessions, opts.turns],
-  );
+  const data = useQuery(sessionMapQuery(opts, (n, of) => setProgress(`${n}/${of} sessions`)));
   const graph = useMemo(
-    () => (data.state === "ready" ? buildGraph(data.data, { includeSpans: opts.spans, includeFlows: opts.flows }) : undefined),
-    [data, opts.spans, opts.flows],
+    () => (data.data ? buildGraph(data.data, { includeSpans: opts.spans, includeFlows: opts.flows }) : undefined),
+    [data.data, opts.spans, opts.flows],
   );
   const [selected, setSelected] = useState<MapNode | undefined>();
 
@@ -110,8 +83,8 @@ function StructureMap({ params, layoutSwitch }: { params: URLSearchParams; layou
         <label><input type="checkbox" checked={opts.spans} onChange={(e) => set("spans", e.currentTarget.checked ? 1 : 0)} /> Spans</label>
         <label><input type="checkbox" checked={opts.flows} disabled={!opts.spans} onChange={(e) => set("flows", e.currentTarget.checked ? 1 : 0)} /> Data flow links</label>
         {graph && <span class="muted">{graph.nodes.length} nodes · {graph.links.length} links</span>}
-        {data.state === "loading" && <span class="muted">Loading {progress}…</span>}
-        {data.state === "error" && <span class="error">{data.error}</span>}
+        {data.isPending && <span class="muted">Loading {progress}…</span>}
+        {data.error && <QueryError error={data.error} retry={() => data.refetch()} />}
       </div>
       <div class="map-body">
         {graph?.nodes.length === 0 && <p class="page muted">No sessions with derived turns found.</p>}

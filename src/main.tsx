@@ -1,6 +1,8 @@
+import { QueryClientProvider } from "@tanstack/preact-query";
 import { render } from "preact";
 import { lazy, Suspense } from "preact/compat";
 import { href, useRoute } from "./hooks";
+import { queryClient } from "./queries";
 import { Search } from "./views/search";
 import { SessionDetail, Sessions } from "./views/sessions";
 import "./styles.css";
@@ -10,7 +12,7 @@ const MapView = lazy(() => import("./views/map").then((m) => m.MapView));
 function App() {
   const { path, params } = useRoute();
   const nav = (to: string, label: string) => (
-    <a href={href(to)} class={path === to || (to === "/" && path === "/session") ? "active" : ""}>{label}</a>
+    <a href={href(to)} aria-current={path === to || (to === "/" && path === "/session") ? "page" : undefined}>{label}</a>
   );
 
   return (
@@ -41,4 +43,9 @@ function App() {
   );
 }
 
-render(<App />, document.getElementById("app")!);
+render(
+  <QueryClientProvider client={queryClient}>
+    <App />
+  </QueryClientProvider>,
+  document.getElementById("app")!,
+);

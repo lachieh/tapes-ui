@@ -1,36 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
 
-export type Async<T> =
-  | { state: "loading" }
-  | { state: "error"; error: string }
-  | { state: "ready"; data: T };
-
-export function useLoad<T>(load: (signal: AbortSignal) => Promise<T>, deps: unknown[], pollMs?: number): Async<T> {
-  const [result, setResult] = useState<Async<T>>({ state: "loading" });
-  useEffect(() => {
-    const ctrl = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    setResult({ state: "loading" });
-    const run = async (first: boolean) => {
-      if (first || !document.hidden) {
-        try {
-          const data = await load(ctrl.signal);
-          if (!ctrl.signal.aborted) setResult({ state: "ready", data });
-        } catch (err) {
-          if (!ctrl.signal.aborted) setResult({ state: "error", error: (err as Error).message });
-        }
-      }
-      if (pollMs && !ctrl.signal.aborted) timer = setTimeout(() => run(false), pollMs);
-    };
-    run(true);
-    return () => {
-      ctrl.abort();
-      clearTimeout(timer);
-    };
-  }, deps);
-  return result;
-}
-
 export interface Route {
   path: string;
   params: URLSearchParams;

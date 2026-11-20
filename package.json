@@ -9,12 +9,17 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tanstack/preact-query": "^5.108.2",
     "3d-force-graph": "^1.80.2",
+    "d3-selection": "^3.0.1",
+    "d3-zoom": "^3.0.1",
     "preact": "^11.2.0",
     "three": "^0.187.0"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.6",
+    "@types/d3-selection": "^3.0.12",
+    "@types/d3-zoom": "^3.0.9",
     "@types/node": "^26.6.6",
     "@types/three": "^0.187.0",
     "typescript": "^7.0.2",

@@ -15,6 +15,9 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 button, select, input { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.3rem 0.6rem; }
 button { cursor: pointer; }
+input::placeholder { color: var(--muted); opacity: 1; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+::selection { background: rgba(78, 154, 241, 0.35); }
 button.link { background: none; border: 0; padding: 0; color: var(--accent); text-align: left; }
 pre { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.75rem; overflow: auto; max-height: 60vh; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
 .muted { color: var(--muted); }
@@ -24,11 +27,12 @@ header.top { display: flex; align-items: center; gap: 2rem; padding: 0.6rem 1.25
 header.top h1 { font-size: 1.1rem; margin: 0; letter-spacing: 0.02em; }
 header.top nav { display: flex; gap: 1.25rem; }
 header.top nav a { color: var(--muted); }
-header.top nav a.active { color: var(--text); }
+header.top nav a[aria-current] { color: var(--text); }
 
 .page { padding: 1rem 1.25rem; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin-bottom: 0.75rem; }
 .toolbar input[type="search"] { flex: 1; max-width: 40rem; }
+.map-toolbar input[type="search"] { max-width: 22rem; }
 
 .stats { display: flex; gap: 2rem; margin-bottom: 1rem; }
 .stat b { display: block; font-size: 1.3rem; font-variant-numeric: tabular-nums; }
@@ -66,12 +70,28 @@ ol.results li { margin-bottom: 0.75rem; }
 .map-toolbar { padding: 0.6rem 1.25rem; margin: 0; border-bottom: 1px solid var(--line); }
 .map-body { position: relative; flex: 1; min-height: 0; }
 .graph { position: absolute; inset: 0; }
-.legend { position: absolute; left: 1rem; bottom: 1rem; list-style: none; margin: 0; padding: 0.5rem 0.75rem; background: rgba(21, 24, 29, 0.85); border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
+.legend { position: absolute; left: 1rem; bottom: 1rem; list-style: none; margin: 0; padding: 0.5rem 0.75rem; background: rgba(21, 24, 29, 0.92); border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
+.legend ul { list-style: none; margin: 0; padding: 0; }
+.legend { max-width: 17rem; }
+.legend li button { display: flex; white-space: nowrap; align-items: center; width: 100%; gap: 0.1rem; border: 0; background: none; padding: 0.15rem 0.35rem; margin: 0 -0.35rem; border-radius: 4px; text-align: left; }
+.legend li button:hover { background: var(--line); }
+.legend li button[aria-pressed="true"] { background: #232a35; box-shadow: inset 0 0 0 1px var(--accent); }
+.legend li button .key { overflow: hidden; text-overflow: ellipsis; }
+.legend li button .muted { margin-left: auto; padding-left: 0.75rem; font-variant-numeric: tabular-nums; }
+.legend-hint { margin: 0.35rem 0 0; font-size: 11px; }
+.toolbar-status { margin-left: auto; font-variant-numeric: tabular-nums; }
+canvas.graph { display: block; width: 100%; height: 100%; touch-action: none; }
+canvas.graph:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.map-tip { position: absolute; left: 0; top: 0; max-width: 18rem; pointer-events: none; display: flex; flex-direction: column; gap: 0.15rem; padding: 0.4rem 0.6rem; background: rgba(21, 24, 29, 0.96); border: 1px solid var(--line); border-radius: 6px; font-size: 12px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); }
+.map-tip[hidden] { display: none; }
+.map-tip strong { font-weight: 500; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.map-fit { position: absolute; right: 1rem; bottom: 1rem; }
+.map-note { position: absolute; left: 50%; top: 1rem; transform: translateX(-50%); margin: 0; padding: 0.4rem 0.75rem; background: rgba(21, 24, 29, 0.92); border: 1px solid var(--line); border-radius: 6px; }
 .node-panel { position: absolute; right: 1rem; top: 1rem; width: 22rem; padding: 0.75rem 1rem; background: rgba(21, 24, 29, 0.95); border: 1px solid var(--line); border-radius: 6px; }
 .node-panel p { margin: 0.4rem 0 0.6rem; word-break: break-word; }
 .node-panel .close { position: absolute; right: 0.5rem; top: 0.4rem; border: 0; background: none; font-size: 1.1rem; }
 .segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
 .segmented a { padding: 0.3rem 0.7rem; color: var(--muted); }
 .segmented a + a { border-left: 1px solid var(--line); }
-.segmented a.active { color: var(--text); background: var(--panel); }
+.segmented a[aria-current] { color: var(--text); background: var(--panel); }
 .harness-toggles { display: inline-flex; flex-wrap: wrap; gap: 0.75rem; }

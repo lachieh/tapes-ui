@@ -124,7 +124,10 @@ async function getJSON<T>(path: string, query?: Query, signal?: AbortSignal): Pr
   try {
     body = text ? JSON.parse(text) : undefined;
   } catch {
-    throw new ApiError(res.status, `${res.status} ${res.statusText}: ${text.slice(0, 200)}`);
+    const message = res.ok
+      ? `The response was cut off after ${text.length.toLocaleString()} characters.`
+      : `${res.status} ${res.statusText}: ${text.slice(0, 200)}`;
+    throw new ApiError(res.status, message);
   }
   if (!res.ok) {
     const message = (body as { error?: string } | undefined)?.error;

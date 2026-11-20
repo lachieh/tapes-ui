@@ -1,29 +1,22 @@
-import { useEffect, useState } from "preact/hooks";
-import { api, firstOccurrenceById, type Session, type Span } from "../api";
-import { ago, basename, colour, cost, count, duration, shortId } from "../format";
-import { href, useLoad } from "../hooks";
+import { useInfiniteQuery, useQuery } from "@tanstack/preact-query";
+import { useState } from "preact/hooks";
+import { firstOccurrenceById } from "../api";
+import { ago, colour, cost, count, duration, shortId } from "../format";
+import { href } from "../hooks";
+import { repoOf } from "../map/embedding";
+import { sessionsQuery, sessionTracesQuery, spanQuery, statsQuery } from "../queries";
+import { QueryError } from "./status";
 
 const SORTS = ["last_active", "started_at", "turn_count", "total_cost_usd", "total_tokens"] as const;
 
 export function Sessions({ sort }: { sort: string }) {
-  const [later, setLater] = useState<{ items: Session[]; cursor?: string }>();
-  const first = useLoad((s) => api.sessions({ limit: 50, sort }, s), [sort], 15_000);
-  const stats = useLoad((s) => api.stats(s), [], 60_000);
-
-  useEffect(() => setLater(undefined), [sort]);
-
-  const firstItems = first.state === "ready" ? first.data.items : [];
-  const cursor = later ? later.cursor : first.state === "ready" ? first.data.next_cursor : undefined;
-  const loadMore = async () => {
-    if (!cursor) return;
-    const page = await api.sessions({ limit: 50, sort, cursor });
-    setLater((l) => ({ items: [...(l?.items ?? []), ...page.items], cursor: page.next_cursor }));
-  };
-  const items = firstOccurrenceById([...firstItems, ...(later?.items ?? [])]);
+  const sessions = useInfiniteQuery(sessionsQuery(sort));
+  const stats = useQuery(statsQuery);
+  const items = firstOccurrenceById(sessions.data?.pages.flatMap((page) => page.items) ?? []);
 
   return (
     <div class="page">
-      {stats.state === "ready" && (
+      {stats.data && (
         <div class="stats">
           <Stat label="sessions" value={count(stats.data.session_count)} />
           <Stat label="turns" value={count(stats.data.turn_count)} />
@@ -41,11 +34,11 @@ export function Sessions({ sort }: { sort: string }) {
         </label>
         <span class="muted">Refreshes every 15s</span>
       </div>
-      {first.state === "loading" && <p class="muted">Loading sessions…</p>}
-      {first.state === "error" && <p class="error">{first.error}</p>}
+      {sessions.isPending && <p class="muted">Loading sessions…</p>}
+      {sessions.error && <QueryError error={sessions.error} retry={() => sessions.refetch()} />}
       <table class="sessions">
         <thead>
-          <tr><th>Session</th><th>Harness</th><th>Project</th><th>Turns</th><th>Tokens</th><th>Cost</th><th>Last seen</th></tr>
+          <tr><th>Session</th><th>Harness</th><th>Repo</th><th>Turns</th><th>Tokens</th><th>Cost</th><th>Last seen</th></tr>
         </thead>
         <tbody>
           {items.map((s) => (
@@ -56,7 +49,7 @@ export function Sessions({ sort }: { sort: string }) {
                 <span class={`badge ${s.rollup.status}`}>{s.rollup.status}</span>
               </td>
               <td><span class="dot" style={{ background: colour(s.harness_id) }} />{s.harness_id}</td>
-              <td title={s.cwd}>{basename(s.cwd)}</td>
+              <td title={s.cwd}>{s.cwd ? repoOf(s.cwd) : ""}</td>
               <td class="num">{s.rollup.turn_count}</td>
               <td class="num">{count((s.rollup.usage.input_tokens ?? 0) + (s.rollup.usage.output_tokens ?? 0))}</td>
               <td class="num">{cost(s.rollup.usage.cost_usd)}</td>
@@ -65,7 +58,11 @@ export function Sessions({ sort }: { sort: string }) {
           ))}
         </tbody>
       </table>
-      {cursor && <button onClick={loadMore}>Load more</button>}
+      {sessions.hasNextPage && (
+        <button onClick={() => sessions.fetchNextPage()} disabled={sessions.isFetchingNextPage}>
+          {sessions.isFetchingNextPage ? "Loading…" : "Load more"}
+        </button>
+      )}
     </div>
   );
 }
@@ -75,11 +72,12 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 export function SessionDetail({ id, turn }: { id: string; turn?: string }) {
-  const data = useLoad((s) => api.sessionTraces(id, { limit: 200 }, s), [id], 20_000);
-  const [span, setSpan] = useState<Span | undefined>();
+  const data = useQuery(sessionTracesQuery(id));
+  const [spanRef, setSpanRef] = useState<{ traceId: string; spanId: string }>();
+  const span = useQuery({ ...spanQuery(spanRef?.traceId ?? "", spanRef?.spanId ?? ""), enabled: spanRef !== undefined });
 
-  if (data.state === "loading") return <p class="page muted">Loading session…</p>;
-  if (data.state === "error") return <p class="page error">{data.error}</p>;
+  if (data.isPending) return <p class="page muted">Loading session…</p>;
+  if (data.error) return <div class="page"><QueryError error={data.error} retry={() => data.refetch()} /></div>;
   const { session, traces, next_cursor } = data.data;
   const selected = traces.find((t) => t.trace.trace_id === turn) ?? traces[0];
 
@@ -92,7 +90,7 @@ export function SessionDetail({ id, turn }: { id: string; turn?: string }) {
         </div>
         <div class="muted">
           {session.rollup.turn_count} turns · {cost(session.rollup.usage.cost_usd)} · started {ago(session.started_at)}
-          {session.live && " · live"} · <a href={href("/map", { session: session.id })}>view in 3D map</a>
+          {session.live && " · live"} · <a href={href("/map", { session: session.id })}>view on the map</a>
         </div>
       </header>
       {traces.length === 0 && <p class="muted">No turns derived for this session yet.</p>}
@@ -100,7 +98,7 @@ export function SessionDetail({ id, turn }: { id: string; turn?: string }) {
         <ol class="turns">
           {traces.map(({ trace }, i) => (
             <li key={trace.trace_id} class={trace === selected?.trace ? "active" : ""}>
-              <a href={href("/session", { id, turn: trace.trace_id })} onClick={() => setSpan(undefined)}>
+              <a href={href("/session", { id, turn: trace.trace_id })} onClick={() => setSpanRef(undefined)}>
                 <span class="prompt">#{i + 1} {trace.user_prompt || "(synthetic turn)"}</span>
                 <span class="response">{trace.response_preview}</span>
                 <span class="muted">
@@ -117,7 +115,7 @@ export function SessionDetail({ id, turn }: { id: string; turn?: string }) {
             <ul>
               {selected.spans.map((sp) => (
                 <li key={sp.span_id} style={{ paddingLeft: sp.parent_span_id ? "1.25rem" : 0 }}>
-                  <button class="link" onClick={() => api.span(sp.trace_id, sp.span_id).then(setSpan)}>
+                  <button class="link" onClick={() => setSpanRef({ traceId: sp.trace_id, spanId: sp.span_id })}>
                     <span class="dot" style={{ background: colour(sp.kind) }} />
                     {sp.kind} · {sp.model || sp.name}
                   </button>
@@ -125,10 +123,12 @@ export function SessionDetail({ id, turn }: { id: string; turn?: string }) {
                 </li>
               ))}
             </ul>
-            {span && (
+            {span.isFetching && !span.data && <p class="muted">Loading span…</p>}
+            {span.error && <QueryError error={span.error} retry={() => span.refetch()} />}
+            {span.data && (
               <>
-                <h3>{span.kind} · {span.name}</h3>
-                <pre>{JSON.stringify({ input: span.input, output: span.output, usage: span.usage }, null, 2)}</pre>
+                <h3>{span.data.kind} · {span.data.name}</h3>
+                <pre>{JSON.stringify({ input: span.data.input, output: span.data.output, usage: span.data.usage }, null, 2)}</pre>
               </>
             )}
           </div>
