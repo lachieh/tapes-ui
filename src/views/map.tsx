@@ -1,9 +1,11 @@
 import ForceGraph3D, { type ForceGraph3DInstance } from "3d-force-graph";
+import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { api, sessionTracesUpTo, type SessionTraces } from "../api";
 import { colour, escapeHtml, shortId } from "../format";
 import { href, useLoad } from "../hooks";
 import { buildGraph, type MapEdge, type MapNode } from "../map/graph";
+import { EmbeddingMap } from "./embedding-map";
 
 const MAX_SESSION_PAGES = 10;
 const CONCURRENT_SESSION_LOADS = 4;
@@ -47,6 +49,19 @@ async function loadSessions(opts: Options, signal: AbortSignal, progress: (n: nu
 }
 
 export function MapView({ params }: { params: URLSearchParams }) {
+  const embedding = params.get("layout") === "embedding";
+  const layoutSwitch = (
+    <span class="segmented" role="group" aria-label="Layout">
+      <a href={href("/map")} class={embedding ? "" : "active"}>Structure</a>
+      <a href={href("/map", { layout: "embedding" })} class={embedding ? "active" : ""}>Embedding</a>
+    </span>
+  );
+  return embedding
+    ? <EmbeddingMap params={params} layoutSwitch={layoutSwitch} />
+    : <StructureMap params={params} layoutSwitch={layoutSwitch} />;
+}
+
+function StructureMap({ params, layoutSwitch }: { params: URLSearchParams; layoutSwitch: ComponentChildren }) {
   const opts: Options = {
     session: params.get("session") ?? undefined,
     sessions: Number(params.get("sessions") ?? 15),
@@ -72,6 +87,7 @@ export function MapView({ params }: { params: URLSearchParams }) {
   return (
     <div class="map-page">
       <div class="toolbar map-toolbar">
+        {layoutSwitch}
         {opts.session ? (
           <span>
             Session <a href={href("/session", { id: opts.session })}>{shortId(opts.session)}</a> ·{" "}

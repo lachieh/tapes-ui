@@ -1,3 +1,5 @@
+import { parseMapPoints } from "./map/embedding";
+
 export interface Usage {
   input_tokens?: number;
   output_tokens?: number;
@@ -98,6 +100,12 @@ export interface SearchResult {
   display_title?: string;
 }
 
+export class ApiError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+  }
+}
+
 type Query = Record<string, string | number | boolean | undefined>;
 
 function url(path: string, query: Query = {}): string {
@@ -116,11 +124,11 @@ async function getJSON<T>(path: string, query?: Query, signal?: AbortSignal): Pr
   try {
     body = text ? JSON.parse(text) : undefined;
   } catch {
-    throw new Error(`${res.status} ${res.statusText}: ${text.slice(0, 200)}`);
+    throw new ApiError(res.status, `${res.status} ${res.statusText}: ${text.slice(0, 200)}`);
   }
   if (!res.ok) {
     const message = (body as { error?: string } | undefined)?.error;
-    throw new Error(message ?? `${res.status} ${res.statusText}`);
+    throw new ApiError(res.status, message ?? `${res.status} ${res.statusText}`);
   }
   return body as T;
 }
@@ -137,6 +145,7 @@ export const api = {
     getJSON<Span>(`/v1/traces/${enc(traceId)}/spans/${enc(spanId)}`, {}, signal),
   search: (query: string, topK: number, signal?: AbortSignal) =>
     getJSON<{ results: SearchResult[] }>("/v1/cassettes/search/spans", { query, top_k: topK }, signal),
+  mapPoints: async (signal?: AbortSignal) => parseMapPoints(await getJSON<unknown>("/v1/cassettes/map/points", {}, signal)),
 };
 
 export async function sessionTracesUpTo(id: string, maxTraces: number, signal?: AbortSignal): Promise<SessionTraces> {
