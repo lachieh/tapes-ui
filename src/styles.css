@@ -44,7 +44,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .dot { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 50%; margin-right: 0.4rem; }
 .live { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: #59a14f; margin-right: 0.4rem; box-shadow: 0 0 6px #59a14f; }
 .badge { margin-left: 0.5rem; font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 0.3rem; }
-.badge.failed, .badge.error { color: var(--error); }
+.badge.error { color: var(--error); }
 
 .session-head h2 { margin: 0 0 0.25rem; font-size: 1.15rem; }
 .session-head { margin-bottom: 1rem; }

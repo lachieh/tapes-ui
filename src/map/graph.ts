@@ -49,10 +49,8 @@ export function buildGraph(sessions: SessionTraces[], opts: BuildOptions): MapGr
   const links: MapEdge[] = [];
   const ids = new Set<string>();
   const add = (node: MapNode) => {
-    if (ids.has(node.id)) return false;
     ids.add(node.id);
     nodes.push(node);
-    return true;
   };
 
   for (const { session, traces, links: spanLinks } of sessions) {
@@ -67,7 +65,7 @@ export function buildGraph(sessions: SessionTraces[], opts: BuildOptions): MapGr
 
     let previous: string | undefined;
     for (const { trace, spans } of traces) {
-      if (!add({
+      add({
         id: trace.trace_id,
         type: "turn",
         label: clip(trace.user_prompt || "(synthetic turn)", 80),
@@ -75,7 +73,7 @@ export function buildGraph(sessions: SessionTraces[], opts: BuildOptions): MapGr
         sessionId: session.id,
         traceId: trace.trace_id,
         val: 4,
-      })) continue;
+      });
       links.push({ source: session.id, target: trace.trace_id, type: "turn" });
       if (previous) links.push({ source: previous, target: trace.trace_id, type: "next" });
       previous = trace.trace_id;
@@ -84,7 +82,7 @@ export function buildGraph(sessions: SessionTraces[], opts: BuildOptions): MapGr
       const inTrace = new Set(spans.map((s) => s.span_id));
       for (const span of spans) {
         const id = spanNodeId(trace.trace_id, span.span_id);
-        if (!add({
+        add({
           id,
           type: "span",
           label: clip(span.model ? `${span.kind}: ${span.model}` : `${span.kind}: ${span.name}`, 80),
@@ -93,7 +91,7 @@ export function buildGraph(sessions: SessionTraces[], opts: BuildOptions): MapGr
           traceId: trace.trace_id,
           spanId: span.span_id,
           val: 1,
-        })) continue;
+        });
         const parent = span.parent_span_id && inTrace.has(span.parent_span_id)
           ? spanNodeId(trace.trace_id, span.parent_span_id)
           : trace.trace_id;
@@ -112,7 +110,5 @@ export function buildGraph(sessions: SessionTraces[], opts: BuildOptions): MapGr
     }
   }
 
-  // Parents can appear after children in a page, so drop edges to nodes that
-  // never arrived rather than let the force layout throw on them.
-  return { nodes, links: links.filter((l) => ids.has(l.source) && ids.has(l.target)) };
+  return { nodes, links };
 }

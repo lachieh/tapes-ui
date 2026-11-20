@@ -3,12 +3,12 @@ import type { SessionTraces, Span } from "../api";
 import { buildGraph } from "./graph";
 
 const span = (trace_id: string, span_id: string, kind: string, parent_span_id?: string): Span => ({
-  trace_id, span_id, parent_span_id, kind, name: kind, seq: 0, status: "ok", started_at: "",
+  trace_id, span_id, parent_span_id, kind, name: kind, status: "ok", started_at: "",
 });
 
 const fixture: SessionTraces = {
   session: {
-    id: "s1", harness_id: "claude", harness_session_id: "h1", started_at: "", last_seen_at: "",
+    id: "s1", harness_id: "claude", started_at: "", last_seen_at: "",
     live: false, display_title: "Fix the thing", rollup: { status: "completed", turn_count: 2, usage: {} },
   },
   traces: [

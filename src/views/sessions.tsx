@@ -6,26 +6,24 @@ import { href, useLoad } from "../hooks";
 const SORTS = ["last_active", "started_at", "turn_count", "total_cost_usd", "total_tokens"] as const;
 
 export function Sessions({ sort }: { sort: string }) {
-  const [extra, setExtra] = useState<Session[]>([]);
-  const [cursor, setCursor] = useState<string | undefined>();
+  // Pages after the first. The first page keeps polling, so a live session
+  // can move into it from a later page, and a double click can fetch a page
+  // twice; keep each session's first occurrence when merging.
+  const [later, setLater] = useState<{ items: Session[]; cursor?: string }>();
   const first = useLoad((s) => api.sessions({ limit: 50, sort }, s), [sort], 15_000);
   const stats = useLoad((s) => api.stats(s), [], 60_000);
 
-  useEffect(() => {
-    setExtra([]);
-    setCursor(undefined);
-  }, [sort]);
+  useEffect(() => setLater(undefined), [sort]);
 
+  const firstItems = first.state === "ready" ? first.data.items : [];
+  const cursor = later ? later.cursor : first.state === "ready" ? first.data.next_cursor : undefined;
   const loadMore = async () => {
-    const from = cursor ?? (first.state === "ready" ? first.data.next_cursor : undefined);
-    if (!from) return;
-    const page = await api.sessions({ limit: 50, sort, cursor: from });
-    setExtra((xs) => [...xs, ...page.items]);
-    setCursor(page.next_cursor ?? "");
+    if (!cursor) return;
+    const page = await api.sessions({ limit: 50, sort, cursor });
+    setLater((l) => ({ items: [...(l?.items ?? []), ...page.items], cursor: page.next_cursor }));
   };
-
-  const items = first.state === "ready" ? [...first.data.items, ...extra] : [];
-  const more = cursor === undefined ? first.state === "ready" && !!first.data.next_cursor : cursor !== "";
+  const seen = new Set<string>();
+  const items = [...firstItems, ...(later?.items ?? [])].filter((s) => !seen.has(s.id) && seen.add(s.id));
 
   return (
     <div class="page">
@@ -71,7 +69,7 @@ export function Sessions({ sort }: { sort: string }) {
           ))}
         </tbody>
       </table>
-      {more && <button onClick={loadMore}>Load more</button>}
+      {cursor && <button onClick={loadMore}>Load more</button>}
     </div>
   );
 }

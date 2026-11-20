@@ -58,9 +58,8 @@ export function MapView({ params }: { params: URLSearchParams }) {
     spans: params.get("spans") !== "0",
     flows: params.get("flows") === "1",
   };
-  const set = (patch: Partial<Record<keyof Options, string | number | undefined>>) => {
-    const next = { ...opts, spans: opts.spans ? 1 : 0, flows: opts.flows ? 1 : 0, ...patch };
-    location.hash = href("/map", next as Record<string, string | number | undefined>);
+  const set = (key: keyof Options, value: string | number) => {
+    location.hash = href("/map", { ...Object.fromEntries(params), [key]: value });
   };
 
   const [progress, setProgress] = useState("");
@@ -85,19 +84,19 @@ export function MapView({ params }: { params: URLSearchParams }) {
         ) : (
           <label>
             Recent sessions{" "}
-            <select value={opts.sessions} onChange={(e) => set({ sessions: e.currentTarget.value })}>
+            <select value={opts.sessions} onChange={(e) => set("sessions", e.currentTarget.value)}>
               {[5, 15, 30, 60].map((n) => <option value={n}>{n}</option>)}
             </select>
           </label>
         )}
         <label>
           Turns per session{" "}
-          <select value={opts.turns} onChange={(e) => set({ turns: e.currentTarget.value })}>
+          <select value={opts.turns} onChange={(e) => set("turns", e.currentTarget.value)}>
             {[10, 30, 100, 200].map((n) => <option value={n}>{n}</option>)}
           </select>
         </label>
-        <label><input type="checkbox" checked={opts.spans} onChange={(e) => set({ spans: e.currentTarget.checked ? 1 : 0 })} /> Spans</label>
-        <label><input type="checkbox" checked={opts.flows} disabled={!opts.spans} onChange={(e) => set({ flows: e.currentTarget.checked ? 1 : 0 })} /> Data flow links</label>
+        <label><input type="checkbox" checked={opts.spans} onChange={(e) => set("spans", e.currentTarget.checked ? 1 : 0)} /> Spans</label>
+        <label><input type="checkbox" checked={opts.flows} disabled={!opts.spans} onChange={(e) => set("flows", e.currentTarget.checked ? 1 : 0)} /> Data flow links</label>
         {graph && <span class="muted">{graph.nodes.length} nodes · {graph.links.length} links</span>}
         {data.state === "loading" && <span class="muted">Loading {progress}…</span>}
         {data.state === "error" && <span class="error">{data.error}</span>}

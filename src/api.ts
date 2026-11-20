@@ -4,8 +4,6 @@
 export interface Usage {
   input_tokens?: number;
   output_tokens?: number;
-  cache_read_tokens?: number;
-  cache_creation_tokens?: number;
   cost_usd?: number;
 }
 
@@ -13,14 +11,12 @@ export interface Rollup {
   status: string;
   preview?: string;
   turn_count: number;
-  model?: string;
   usage: Usage;
 }
 
 export interface Session {
   id: string;
   harness_id: string;
-  harness_session_id: string;
   cwd?: string;
   harness_version?: string;
   started_at: string;
@@ -37,7 +33,6 @@ export interface Trace {
   response_preview?: string;
   status: string;
   started_at: string;
-  ended_at?: string;
   duration_ns?: number;
   span_count: number;
   usage?: Usage;
@@ -47,18 +42,15 @@ export interface Span {
   trace_id: string;
   span_id: string;
   parent_span_id?: string;
-  seq: number;
   kind: string;
   name: string;
   status: string;
   started_at: string;
   duration_ns?: number;
   model?: string;
-  stop_reason?: string;
   usage?: Usage;
   input?: unknown[];
   output?: unknown[];
-  payload?: string;
 }
 
 export interface SpanLink {

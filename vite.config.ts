@@ -9,6 +9,6 @@ const api = { target, changeOrigin: true, secure: true };
 export default defineConfig({
   plugins: [preact()],
   server: {
-    proxy: { "/v1": api, "/openapi": api, "/ping": api, "/swagger": api, "/metrics": api },
+    proxy: { "/v1": api, "/openapi": api, "/ping": api, "/swagger": api },
   },
 });
