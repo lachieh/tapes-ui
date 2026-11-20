@@ -5,14 +5,13 @@ import { colour, shortId } from "../format";
 import { href, useLoad } from "../hooks";
 import { buildGraph, type MapEdge, type MapNode } from "../map/graph";
 
-// Structural 3D map (phase 1): sessions -> turns -> spans with a force layout,
-// built from the read API only. See knowledge/plans in lachieh/homelab for the
-// phase 2 embedding map, which swaps the layout for cassette-served coordinates.
+const MAX_SESSION_PAGES = 10;
+const CONCURRENT_SESSION_LOADS = 4;
 
 interface Options {
-  session?: string; // map one session; otherwise the most recent `sessions`
+  session?: string;
   sessions: number;
-  turns: number; // max turns per session
+  turns: number;
   spans: boolean;
   flows: boolean;
 }
@@ -24,12 +23,10 @@ const EDGE_COLOUR: Record<MapEdge["type"], string> = {
   flow: "rgba(242,142,43,0.5)",
 };
 
-// Bursts of short-lived sessions with no derived turns can fill the newest
-// pages, so page past them (bounded) until `n` sessions have turns.
 async function recentSessionsWithTurns(n: number, signal: AbortSignal): Promise<string[]> {
   const ids: string[] = [];
   let cursor: string | undefined;
-  for (let page = 0; page < 10 && ids.length < n; page++) {
+  for (let page = 0; page < MAX_SESSION_PAGES && ids.length < n; page++) {
     const res = await api.sessions({ limit: 200, cursor }, signal);
     ids.push(...res.items.filter((s) => s.rollup.turn_count > 0).map((s) => s.id));
     if (!res.next_cursor) break;
@@ -41,9 +38,8 @@ async function recentSessionsWithTurns(n: number, signal: AbortSignal): Promise<
 async function loadSessions(opts: Options, signal: AbortSignal, progress: (n: number, of: number) => void) {
   const ids = opts.session ? [opts.session] : await recentSessionsWithTurns(opts.sessions, signal);
   const out: SessionTraces[] = [];
-  // A few at a time: each request derives a page of spans server-side.
-  for (let i = 0; i < ids.length; i += 4) {
-    const batch = await Promise.all(ids.slice(i, i + 4).map((id) => sessionTracesUpTo(id, opts.turns, signal)));
+  for (let i = 0; i < ids.length; i += CONCURRENT_SESSION_LOADS) {
+    const batch = await Promise.all(ids.slice(i, i + CONCURRENT_SESSION_LOADS).map((id) => sessionTracesUpTo(id, opts.turns, signal)));
     out.push(...batch);
     progress(out.length, ids.length);
   }
@@ -68,7 +64,7 @@ export function MapView({ params }: { params: URLSearchParams }) {
     [opts.session, opts.sessions, opts.turns],
   );
   const graph = useMemo(
-    () => (data.state === "ready" ? buildGraph(data.data, { spans: opts.spans, flows: opts.flows }) : undefined),
+    () => (data.state === "ready" ? buildGraph(data.data, { includeSpans: opts.spans, includeFlows: opts.flows }) : undefined),
     [data, opts.spans, opts.flows],
   );
   const [selected, setSelected] = useState<MapNode | undefined>();
@@ -114,7 +110,7 @@ export function MapView({ params }: { params: URLSearchParams }) {
 function Graph({ nodes, links, onSelect }: { nodes: MapNode[]; links: MapEdge[]; onSelect: (n: MapNode) => void }) {
   const el = useRef<HTMLDivElement>(null);
   const fg = useRef<ForceGraph3DInstance<MapNode, MapEdge>>(undefined);
-  const fit = useRef(true); // zoom to fit once per new data set, after the layout settles
+  const zoomToFitPending = useRef(true);
 
   useEffect(() => {
     const container = el.current!;
@@ -122,7 +118,7 @@ function Graph({ nodes, links, onSelect }: { nodes: MapNode[]; links: MapEdge[];
     g.backgroundColor("#0d0f12")
       .showNavInfo(false)
       .nodeLabel((n) => `${n.type}: ${n.label}`)
-      .nodeColor((n) => colour(n.type === "session" ? "session" : n.group))
+      .nodeColor((n) => colour(n.type === "session" ? "session" : n.colourKey))
       .nodeVal((n) => n.val)
       .nodeOpacity(0.9)
       .linkColor((l) => EDGE_COLOUR[l.type])
@@ -132,8 +128,8 @@ function Graph({ nodes, links, onSelect }: { nodes: MapNode[]; links: MapEdge[];
       .warmupTicks(40)
       .cooldownTime(8000)
       .onEngineStop(() => {
-        if (fit.current) g.zoomToFit(800, 40);
-        fit.current = false;
+        if (zoomToFitPending.current) g.zoomToFit(800, 40);
+        zoomToFitPending.current = false;
       })
       .onNodeClick((n) => {
         onSelect(n);
@@ -152,9 +148,10 @@ function Graph({ nodes, links, onSelect }: { nodes: MapNode[]; links: MapEdge[];
   }, []);
 
   useEffect(() => {
-    // The layout mutates node objects (x/y/z), so hand it copies.
+    // d3-force-3d mutates the nodes (x/y/z, velocities) and links
+    // (source/target) it is given, so hand it copies.
     fg.current?.graphData({ nodes: nodes.map((n) => ({ ...n })), links: links.map((l) => ({ ...l })) });
-    fit.current = true;
+    zoomToFitPending.current = true;
   }, [nodes, links]);
 
   return <div class="graph" ref={el} />;
@@ -176,7 +173,7 @@ function NodePanel({ node, onClose }: { node: MapNode; onClose: () => void }) {
   return (
     <aside class="node-panel">
       <button class="close" onClick={onClose} aria-label="Close">×</button>
-      <div class="muted">{node.type} · {node.group}</div>
+      <div class="muted">{node.type} · {node.colourKey}</div>
       <p>{node.label}</p>
       <a href={href("/session", { id: node.sessionId, turn: node.traceId })}>Open session</a>
       {node.type === "session" && <> · <a href={href("/map", { session: node.sessionId })}>Map this session</a></>}

@@ -1,12 +1,5 @@
 import type { SessionTraces } from "../api";
 
-// The structural map: sessions -> turns (traces) -> spans, following each
-// span's parent_span_id. Built only from the read API's trace projection.
-//
-// Phase 2 (embedding map) will position nodes from a map cassette's 3D
-// coordinates instead of the force layout; it can reuse these node ids
-// (session id, trace id, `${trace_id}/${span_id}`) to join the two views.
-
 export type NodeType = "session" | "turn" | "span";
 export type EdgeType = "turn" | "next" | "child" | "flow";
 
@@ -14,11 +7,11 @@ export interface MapNode {
   id: string;
   type: NodeType;
   label: string;
-  group: string; // colour key: harness for sessions, status for turns, kind for spans
+  colourKey: string;
   sessionId: string;
   traceId?: string;
   spanId?: string;
-  val: number; // relative node size
+  val: number;
 }
 
 export interface MapEdge {
@@ -33,8 +26,8 @@ export interface MapGraph {
 }
 
 export interface BuildOptions {
-  spans: boolean; // include span nodes
-  flows: boolean; // include emits/feeds links between spans
+  includeSpans: boolean;
+  includeFlows: boolean;
 }
 
 export const spanNodeId = (traceId: string, spanId: string) => `${traceId}/${spanId}`;
@@ -58,7 +51,7 @@ export function buildGraph(sessions: SessionTraces[], opts: BuildOptions): MapGr
       id: session.id,
       type: "session",
       label: clip(session.display_title || session.rollup.preview || session.id, 80),
-      group: session.harness_id || "unknown",
+      colourKey: session.harness_id || "unknown",
       sessionId: session.id,
       val: 12,
     });
@@ -69,7 +62,7 @@ export function buildGraph(sessions: SessionTraces[], opts: BuildOptions): MapGr
         id: trace.trace_id,
         type: "turn",
         label: clip(trace.user_prompt || "(synthetic turn)", 80),
-        group: trace.status || "unknown",
+        colourKey: trace.status || "unknown",
         sessionId: session.id,
         traceId: trace.trace_id,
         val: 4,
@@ -78,7 +71,7 @@ export function buildGraph(sessions: SessionTraces[], opts: BuildOptions): MapGr
       if (previous) links.push({ source: previous, target: trace.trace_id, type: "next" });
       previous = trace.trace_id;
 
-      if (!opts.spans) continue;
+      if (!opts.includeSpans) continue;
       const inTrace = new Set(spans.map((s) => s.span_id));
       for (const span of spans) {
         const id = spanNodeId(trace.trace_id, span.span_id);
@@ -86,7 +79,7 @@ export function buildGraph(sessions: SessionTraces[], opts: BuildOptions): MapGr
           id,
           type: "span",
           label: clip(span.model ? `${span.kind}: ${span.model}` : `${span.kind}: ${span.name}`, 80),
-          group: span.kind || "unknown",
+          colourKey: span.kind || "unknown",
           sessionId: session.id,
           traceId: trace.trace_id,
           spanId: span.span_id,
@@ -99,7 +92,7 @@ export function buildGraph(sessions: SessionTraces[], opts: BuildOptions): MapGr
       }
     }
 
-    if (opts.spans && opts.flows) {
+    if (opts.includeSpans && opts.includeFlows) {
       for (const l of spanLinks ?? []) {
         const source = spanNodeId(l.from_trace_id, l.from_span_id);
         const target = spanNodeId(l.to_trace_id, l.to_span_id);

@@ -5,7 +5,6 @@ import { Search } from "./views/search";
 import { SessionDetail, Sessions } from "./views/sessions";
 import "./styles.css";
 
-// three.js is most of the bundle; only the map page needs it.
 const MapView = lazy(() => import("./views/map").then((m) => m.MapView));
 
 function App() {

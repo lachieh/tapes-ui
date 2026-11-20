@@ -5,8 +5,6 @@ export type Async<T> =
   | { state: "error"; error: string }
   | { state: "ready"; data: T };
 
-// Run an abortable load whenever deps change. Optional pollMs re-runs it while
-// the tab is visible (live updates are polling, not WebSockets).
 export function useLoad<T>(load: (signal: AbortSignal) => Promise<T>, deps: unknown[], pollMs?: number): Async<T> {
   const [result, setResult] = useState<Async<T>>({ state: "loading" });
   useEffect(() => {

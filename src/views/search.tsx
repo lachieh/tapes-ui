@@ -2,7 +2,6 @@ import { api } from "../api";
 import { ago, basename } from "../format";
 import { href, useLoad } from "../hooks";
 
-// Semantic search through the search cassette (/v1/cassettes/search/spans).
 export function Search({ query }: { query: string }) {
   const results = useLoad(
     (s) => (query ? api.search(query, 25, s) : Promise.resolve({ results: [] })),

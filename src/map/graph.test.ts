@@ -18,7 +18,6 @@ const fixture: SessionTraces = {
     },
     {
       trace: { trace_id: "t2", status: "error", started_at: "", span_count: 1 },
-      // Parent outside the page: attach to the turn instead of dangling.
       spans: [span("t2", "orphan", "tool", "missing")],
     },
   ],
@@ -32,7 +31,7 @@ const edges = (g: ReturnType<typeof buildGraph>) => g.links.map((l) => `${l.type
 
 describe("buildGraph", () => {
   it("links session to turns, turns in order, and spans by parent", () => {
-    const g = buildGraph([fixture], { spans: true, flows: true });
+    const g = buildGraph([fixture], { includeSpans: true, includeFlows: true });
     expect(g.nodes.map((n) => n.id).sort()).toEqual(
       ["s1", "t1", "t1/agent", "t1/llm", "t1/tool", "t2", "t2/orphan"].sort(),
     );
@@ -49,14 +48,14 @@ describe("buildGraph", () => {
   });
 
   it("omits spans and flows when disabled", () => {
-    const g = buildGraph([fixture], { spans: false, flows: true });
+    const g = buildGraph([fixture], { includeSpans: false, includeFlows: true });
     expect(g.nodes.map((n) => n.type)).toEqual(["session", "turn", "turn"]);
     expect(edges(g)).toEqual(["next:t1->t2", "turn:s1->t1", "turn:s1->t2"]);
   });
 
   it("colours sessions by harness, turns by status, spans by kind", () => {
-    const g = buildGraph([fixture], { spans: true, flows: false });
-    const group = Object.fromEntries(g.nodes.map((n) => [n.id, n.group]));
-    expect(group).toMatchObject({ s1: "claude", t2: "error", "t1/llm": "llm" });
+    const g = buildGraph([fixture], { includeSpans: true, includeFlows: false });
+    const colourKey = Object.fromEntries(g.nodes.map((n) => [n.id, n.colourKey]));
+    expect(colourKey).toMatchObject({ s1: "claude", t2: "error", "t1/llm": "llm" });
   });
 });

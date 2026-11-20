@@ -1,14 +1,11 @@
 import { useEffect, useState } from "preact/hooks";
-import { api, type Session, type Span } from "../api";
+import { api, firstOccurrenceById, type Session, type Span } from "../api";
 import { ago, basename, colour, cost, count, duration, shortId } from "../format";
 import { href, useLoad } from "../hooks";
 
 const SORTS = ["last_active", "started_at", "turn_count", "total_cost_usd", "total_tokens"] as const;
 
 export function Sessions({ sort }: { sort: string }) {
-  // Pages after the first. The first page keeps polling, so a live session
-  // can move into it from a later page, and a double click can fetch a page
-  // twice; keep each session's first occurrence when merging.
   const [later, setLater] = useState<{ items: Session[]; cursor?: string }>();
   const first = useLoad((s) => api.sessions({ limit: 50, sort }, s), [sort], 15_000);
   const stats = useLoad((s) => api.stats(s), [], 60_000);
@@ -22,8 +19,7 @@ export function Sessions({ sort }: { sort: string }) {
     const page = await api.sessions({ limit: 50, sort, cursor });
     setLater((l) => ({ items: [...(l?.items ?? []), ...page.items], cursor: page.next_cursor }));
   };
-  const seen = new Set<string>();
-  const items = [...firstItems, ...(later?.items ?? [])].filter((s) => !seen.has(s.id) && seen.add(s.id));
+  const items = firstOccurrenceById([...firstItems, ...(later?.items ?? [])]);
 
   return (
     <div class="page">

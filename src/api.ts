@@ -1,6 +1,3 @@
-// Typed client for the tapes read API. Only the fields the UI reads are
-// declared; the live contract is served at /openapi.
-
 export interface Usage {
   input_tokens?: number;
   output_tokens?: number;
@@ -142,7 +139,6 @@ export const api = {
     getJSON<{ results: SearchResult[] }>("/v1/cassettes/search/spans", { query, top_k: topK }, signal),
 };
 
-// Read up to maxTraces of a session's turns, following next_cursor.
 export async function sessionTracesUpTo(id: string, maxTraces: number, signal?: AbortSignal): Promise<SessionTraces> {
   let page = await api.sessionTraces(id, { limit: Math.min(maxTraces, 200) }, signal);
   const traces = [...page.traces];
@@ -153,4 +149,9 @@ export async function sessionTracesUpTo(id: string, maxTraces: number, signal?: 
     links.push(...(page.links ?? []));
   }
   return { session: page.session, traces: traces.slice(0, maxTraces), links, next_cursor: page.next_cursor };
+}
+
+export function firstOccurrenceById<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => !seen.has(item.id) && seen.add(item.id));
 }
