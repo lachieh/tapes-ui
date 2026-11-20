@@ -9,6 +9,23 @@ export interface MapPoint {
   cwd: string;
   title: string;
   last_seen_at: string;
+  /** Fields from map cassette v0.2; empty or zero from an older cassette. */
+  started_at: string;
+  turn_count: number;
+  cost_usd: number;
+  tool_error_count: number;
+  prompt: string;
+  /** HDBSCAN cluster id, -1 for points in no cluster. */
+  cluster: number;
+}
+
+export interface Cluster {
+  id: number;
+  label: string;
+  terms: string[];
+  size: number;
+  x: number;
+  y: number;
 }
 
 export interface MapPoints {
@@ -17,14 +34,26 @@ export interface MapPoints {
   method: string;
   session_count: number;
   points: MapPoint[];
+  clusters: Cluster[];
 }
 
-export type ColourBy = "harness" | "repo";
+export const COLOUR_BY = {
+  repo: "repo",
+  cluster: "topic cluster",
+  harness: "harness",
+  hour: "time of day",
+  recency: "last active",
+  cost: "cost",
+  errors: "tool errors",
+} as const;
+export type ColourBy = keyof typeof COLOUR_BY;
 
 export interface Highlight {
   /** Keys of the colour dimension to keep lit; every key when absent. */
   only?: ReadonlySet<string>;
   text: string;
+  /** Sessions found by a semantic search; every session when absent. */
+  sessions?: ReadonlySet<string>;
 }
 
 class InvalidMapPoints extends Error {
@@ -48,6 +77,12 @@ function text(record: Record<string, unknown>, key: string, where: string): stri
   return v;
 }
 
+function optionalNumber(record: Record<string, unknown>, key: string, where: string): number {
+  const v = record[key];
+  if (v === undefined || v === null) return 0;
+  return finite({ [key]: typeof v === "string" ? Number(v) : v }, key, where);
+}
+
 export function parseMapPoints(body: unknown): MapPoints {
   if (!isRecord(body)) throw new InvalidMapPoints("body is not an object");
   if (!Array.isArray(body.points)) throw new InvalidMapPoints("points is not an array");
@@ -65,6 +100,24 @@ export function parseMapPoints(body: unknown): MapPoints {
       cwd: text(raw, "cwd", where),
       title: text(raw, "title", where),
       last_seen_at: text(raw, "last_seen_at", where),
+      started_at: text(raw, "started_at", where),
+      turn_count: optionalNumber(raw, "turn_count", where),
+      cost_usd: optionalNumber(raw, "cost_usd", where),
+      tool_error_count: optionalNumber(raw, "tool_error_count", where),
+      prompt: text(raw, "prompt", where),
+      cluster: raw.cluster === undefined || raw.cluster === null ? -1 : finite(raw, "cluster", where),
+    };
+  });
+  const clusters = (Array.isArray(body.clusters) ? body.clusters : []).map((raw, i): Cluster => {
+    const where = `clusters[${i}]`;
+    if (!isRecord(raw)) throw new InvalidMapPoints(`${where} is not an object`);
+    return {
+      id: finite(raw, "id", where),
+      label: text(raw, "label", where),
+      terms: Array.isArray(raw.terms) ? raw.terms.filter((t): t is string => typeof t === "string") : [],
+      size: optionalNumber(raw, "size", where),
+      x: finite(raw, "x", where),
+      y: finite(raw, "y", where),
     };
   });
   return {
@@ -73,6 +126,7 @@ export function parseMapPoints(body: unknown): MapPoints {
     method: text(body, "method", "body"),
     session_count: body.session_count === undefined ? points.length : finite(body, "session_count", "body"),
     points,
+    clusters,
   };
 }
 
@@ -105,12 +159,69 @@ export function repoOf(cwd: string): string {
 export const TINY_SESSION_SPANS = 2;
 export const isBackground = (p: MapPoint) => p.span_count <= TINY_SESSION_SPANS || repoOf(p.cwd) === "(temp)";
 
-const ID_LIKE = /^[0-9a-f-]{8,}$/i;
+export const ID_LIKE = /^[0-9a-f-]{8,}$/i;
 /** The session's title, or "" when the only name it has is an id fragment. */
-export const titleOf = (p: MapPoint) => (p.title && !ID_LIKE.test(p.title) ? p.title : "");
+export const titleOf = (p: MapPoint) => (p.title && !ID_LIKE.test(p.title) ? p.title : p.prompt.trim());
 
-export function keyOf(p: MapPoint, by: ColourBy): string {
-  return by === "harness" ? harnessOf(p) : repoOf(p.cwd);
+const HOUR_BUCKETS = ["00–03", "03–06", "06–09", "09–12", "12–15", "15–18", "18–21", "21–24"];
+// Night blue through morning teal, midday yellow and evening orange, back to violet.
+const HOUR_COLOURS = ["#3b4f9a", "#4a6fb5", "#3fa3a0", "#8cc265", "#edc948", "#f28e2b", "#d1615d", "#8e5fa8"];
+const RECENCY = ["today", "this week", "this month", "older"];
+const RECENCY_COLOURS = ["#f6d55c", "#f2a33a", "#c8603a", "#6b4a3a"];
+const COST = ["under $0.10", "$0.10–$1", "$1–$10", "$10 and up"];
+const COST_COLOURS = ["#3c5a7a", "#4e8ac4", "#7fb8f0", "#d4ecff"];
+const ERRORS = ["no tool errors", "tool errors"];
+const ERROR_COLOURS = ["#4a6a5a", "#e15759"];
+const NO_CLUSTER = "(no cluster)";
+
+/** Fixed bucket order and colours for the ordered dimensions. */
+const ORDERED: Partial<Record<ColourBy, { keys: string[]; colours: string[] }>> = {
+  hour: { keys: HOUR_BUCKETS, colours: HOUR_COLOURS },
+  recency: { keys: RECENCY, colours: RECENCY_COLOURS },
+  cost: { keys: COST, colours: COST_COLOURS },
+  errors: { keys: ERRORS, colours: ERROR_COLOURS },
+};
+
+const DAY = 86_400_000;
+
+export interface KeyContext {
+  now: number;
+  clusterLabels: ReadonlyMap<number, string>;
+}
+
+export function keyOf(p: MapPoint, by: ColourBy, ctx: KeyContext = { now: Date.now(), clusterLabels: new Map() }): string {
+  switch (by) {
+    case "harness":
+      return harnessOf(p);
+    case "repo":
+      return repoOf(p.cwd);
+    case "cluster":
+      return p.cluster < 0 ? NO_CLUSTER : ctx.clusterLabels.get(p.cluster) ?? `cluster ${p.cluster}`;
+    case "hour": {
+      const t = Date.parse(p.started_at || p.last_seen_at);
+      return Number.isFinite(t) ? HOUR_BUCKETS[Math.floor(new Date(t).getHours() / 3)]! : "unknown";
+    }
+    case "recency": {
+      const age = ctx.now - Date.parse(p.last_seen_at);
+      return age < DAY ? RECENCY[0]! : age < 7 * DAY ? RECENCY[1]! : age < 30 * DAY ? RECENCY[2]! : RECENCY[3]!;
+    }
+    case "cost":
+      return p.cost_usd < 0.1 ? COST[0]! : p.cost_usd < 1 ? COST[1]! : p.cost_usd < 10 ? COST[2]! : COST[3]!;
+    case "errors":
+      return p.tool_error_count > 0 ? ERRORS[1]! : ERRORS[0]!;
+  }
+}
+
+/** Dimensions the loaded points can colour by; the newer ones need map cassette v0.2 fields. */
+export function availableColourBy(data: MapPoints): ColourBy[] {
+  const has = (f: (p: MapPoint) => boolean) => data.points.some(f);
+  return (Object.keys(COLOUR_BY) as ColourBy[]).filter((by) =>
+    by === "cluster" ? data.clusters.length > 0
+      : by === "cost" ? has((p) => p.cost_usd > 0)
+      : by === "errors" ? has((p) => p.turn_count > 0)
+      : by === "hour" ? has((p) => p.started_at !== "") || has((p) => p.last_seen_at !== "")
+      : true,
+  );
 }
 
 export function countBy(points: MapPoint[], key: (p: MapPoint) => string): [string, number][] {
@@ -130,10 +241,23 @@ export interface Palette {
   other: [string, number][];
 }
 
-/** Harnesses keep their fixed colours; repositories get distinct colours by size, and the long tail shares grey. */
-export function palette(points: MapPoint[], by: ColourBy): Palette {
-  const counts = countBy(points, (p) => keyOf(p, by));
+/**
+ * Harnesses keep their fixed colours and ordered dimensions their own scales;
+ * repos and clusters get distinct colours by size, and the long tail shares grey.
+ */
+export function palette(points: MapPoint[], by: ColourBy, ctx?: KeyContext): Palette {
+  const counts = countBy(points, (p) => keyOf(p, by, ctx));
   if (by === "harness") return { colourOf: colour, named: counts, other: [] };
+  const ordered = ORDERED[by];
+  if (ordered) {
+    const n = new Map(counts);
+    const colours = new Map(ordered.keys.map((k, i) => [k, ordered.colours[i]!]));
+    return {
+      colourOf: (key) => colours.get(key) ?? OTHER_COLOUR,
+      named: ordered.keys.filter((k) => n.has(k)).map((k) => [k, n.get(k)!]),
+      other: counts.filter(([k]) => !colours.has(k)),
+    };
+  }
   const named = counts.filter(([key]) => !key.startsWith("(")).slice(0, RANKED.length);
   const colours = new Map(named.map(([key], i) => [key, RANKED[i]!]));
   return {
@@ -143,10 +267,11 @@ export function palette(points: MapPoint[], by: ColourBy): Palette {
   };
 }
 
-export function isLit(p: MapPoint, by: ColourBy, highlight: Highlight): boolean {
-  if (highlight.only && !highlight.only.has(keyOf(p, by))) return false;
+export function isLit(p: MapPoint, by: ColourBy, highlight: Highlight, ctx?: KeyContext): boolean {
+  if (highlight.only && !highlight.only.has(keyOf(p, by, ctx))) return false;
+  if (highlight.sessions && !highlight.sessions.has(p.session_id)) return false;
   const needle = highlight.text.trim().toLowerCase();
-  return !needle || p.title.toLowerCase().includes(needle) || p.cwd.toLowerCase().includes(needle);
+  return !needle || [p.title, p.prompt, p.cwd].some((v) => v.toLowerCase().includes(needle));
 }
 
 export interface Bounds {

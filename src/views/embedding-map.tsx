@@ -6,10 +6,10 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { ago } from "../format";
 import { href } from "../hooks";
 import {
-  harnessOf, isBackground, isLit, keyOf, palette, pointRadius, repoOf, robustBounds, TINY_SESSION_SPANS, titleOf,
-  type ColourBy, type Highlight, type MapPoint, type Palette,
+  availableColourBy, COLOUR_BY, harnessOf, isBackground, isLit, keyOf, palette, pointRadius, repoOf, robustBounds,
+  TINY_SESSION_SPANS, titleOf, type Cluster, type ColourBy, type Highlight, type KeyContext, type MapPoint, type Palette,
 } from "../map/embedding";
-import { mapPointsQuery } from "../queries";
+import { mapPointsQuery, searchQuery } from "../queries";
 import { QueryError } from "./status";
 
 /** World units per unit of projected coordinate, before zoom. */
@@ -19,10 +19,11 @@ const DIM = "rgba(120, 128, 140, 0.16)";
 const BACKGROUND = "#0d0f12";
 
 export function EmbeddingMap({ params, layoutSwitch }: { params: URLSearchParams; layoutSwitch: ComponentChildren }) {
-  const colourBy: ColourBy = params.get("colour") === "harness" ? "harness" : "repo";
+  const colourParam = params.get("colour") ?? "repo";
   const onlyParam = params.get("only");
   const only = useMemo(() => (onlyParam ? new Set(onlyParam.split(",").filter(Boolean)) : undefined), [onlyParam]);
   const text = params.get("q") ?? "";
+  const meaning = params.get("meaning") ?? "";
   const showBackground = params.get("all") === "1";
   const set = (changes: Record<string, string | undefined>) => {
     location.hash = href("/map", { ...Object.fromEntries(params), ...changes });
@@ -30,16 +31,25 @@ export function EmbeddingMap({ params, layoutSwitch }: { params: URLSearchParams
 
   const result = useQuery(mapPointsQuery);
   const points = result.data?.state === "ready" ? result.data.data : undefined;
+  const dims = useMemo(() => (points ? availableColourBy(points) : (["repo"] as ColourBy[])), [points]);
+  const colourBy: ColourBy = dims.includes(colourParam as ColourBy) ? (colourParam as ColourBy) : "repo";
+  const ctx: KeyContext = useMemo(() => ({
+    now: Date.parse(points?.computed_at ?? "") || Date.now(),
+    clusterLabels: new Map((points?.clusters ?? []).map((c) => [c.id, c.label])),
+  }), [points]);
+  const search = useQuery(searchQuery(meaning, 60));
+  const found = useMemo(() => (search.data ? new Set(search.data.results.map((r) => r.session_id)) : undefined), [search.data]);
 
   const backgroundCount = useMemo(() => points?.points.filter(isBackground).length ?? 0, [points]);
   const shown = useMemo(
     () => (points ? (showBackground ? points.points : points.points.filter((p) => !isBackground(p))) : []),
     [points, showBackground],
   );
-  const colours = useMemo(() => palette(shown, colourBy), [shown, colourBy]);
-  const highlight: Highlight = useMemo(() => ({ only, text }), [only, text]);
-  const lit = useMemo(() => new Set(shown.filter((p) => isLit(p, colourBy, highlight)).map((p) => p.session_id)), [shown, colourBy, highlight]);
-  const highlighting = only !== undefined || text.trim() !== "";
+  const colours = useMemo(() => palette(shown, colourBy, ctx), [shown, colourBy, ctx]);
+  const colourOf = useMemo(() => (p: MapPoint) => colours.colourOf(keyOf(p, colourBy, ctx)), [colours, colourBy, ctx]);
+  const highlight: Highlight = useMemo(() => ({ only, text, sessions: meaning ? found ?? new Set() : undefined }), [only, text, meaning, found]);
+  const lit = useMemo(() => new Set(shown.filter((p) => isLit(p, colourBy, highlight, ctx)).map((p) => p.session_id)), [shown, colourBy, highlight, ctx]);
+  const highlighting = only !== undefined || text.trim() !== "" || meaning !== "";
   const [selected, setSelected] = useState<MapPoint | undefined>();
 
   const setOnly = (keys: Set<string> | undefined) => set({ only: keys && keys.size > 0 ? [...keys].join(",") : undefined });
@@ -50,24 +60,36 @@ export function EmbeddingMap({ params, layoutSwitch }: { params: URLSearchParams
         {layoutSwitch}
         <label>
           Colour by{" "}
-          <select value={colourBy} onChange={(e) => set({ colour: e.currentTarget.value === "harness" ? "harness" : undefined, only: undefined })}>
-            <option value="repo">repo</option>
-            <option value="harness">harness</option>
+          <select value={colourBy} onChange={(e) => set({ colour: e.currentTarget.value === "repo" ? undefined : e.currentTarget.value, only: undefined })}>
+            {dims.map((d) => <option value={d}>{COLOUR_BY[d]}</option>)}
           </select>
         </label>
         <input
           type="search"
-          aria-label="Highlight sessions by title or directory"
-          placeholder="Highlight title or directory"
+          aria-label="Highlight sessions by title, prompt or directory"
+          placeholder="Highlight title, prompt or directory"
           value={text}
           onChange={(e) => set({ q: e.currentTarget.value || undefined })}
         />
+        <form
+          class="meaning"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const q = String(new FormData(e.currentTarget).get("meaning") ?? "").trim();
+            set({ meaning: q || undefined });
+          }}
+        >
+          <input name="meaning" type="search" aria-label="Find sessions by meaning" placeholder="Find by meaning…" value={meaning} />
+          <button type="submit">Find</button>
+        </form>
         <label title={`Sessions with ${TINY_SESSION_SPANS} spans or fewer, and sessions run in temporary directories`}>
           <input type="checkbox" checked={showBackground} onChange={(e) => set({ all: e.currentTarget.checked ? "1" : undefined })} />{" "}
           Tiny and temp sessions <span class="muted">{backgroundCount}</span>
         </label>
         <span class="toolbar-status muted" aria-live="polite">
           {result.isPending && "Loading points…"}
+          {meaning && search.isFetching && !search.data && `Searching for “${meaning}”, this can take 20 seconds… `}
+          {search.error && <span class="error">Search failed: {search.error.message} </span>}
           {points && (
             <>
               {highlighting ? `${lit.size.toLocaleString()} of ${shown.length.toLocaleString()} sessions` : `${shown.length.toLocaleString()} sessions`}
@@ -82,12 +104,12 @@ export function EmbeddingMap({ params, layoutSwitch }: { params: URLSearchParams
         {result.data?.state === "computing" && <p class="page muted">The map cassette is computing its first projection. This page checks again every 10 seconds.</p>}
         {result.data?.state === "not-installed" && <p class="page muted">The map cassette isn't installed in this tapes deployment.</p>}
         {points && shown.length > 0 && (
-          <PointCanvas points={shown} colourBy={colourBy} colours={colours} lit={lit} selected={selected} onSelect={setSelected} />
+          <PointCanvas points={shown} colourOf={colourOf} clusters={points.clusters} lit={lit} selected={selected} onSelect={setSelected} />
         )}
         {points && shown.length === 0 && <p class="page muted">No sessions to show.</p>}
-        {points && highlighting && lit.size === 0 && <p class="map-note muted">Nothing matches. <button class="link" onClick={() => set({ only: undefined, q: undefined })}>Clear highlight</button></p>}
+        {points && highlighting && lit.size === 0 && <p class="map-note muted">Nothing matches. <button class="link" onClick={() => set({ only: undefined, q: undefined, meaning: undefined })}>Clear highlight</button></p>}
         {points && <Legend colours={colours} colourBy={colourBy} only={only} setOnly={setOnly} />}
-        {selected && <PointPanel point={selected} colour={colours.colourOf(keyOf(selected, colourBy))} onClose={() => setSelected(undefined)} />}
+        {selected && <PointPanel point={selected} colour={colourOf(selected)} onClose={() => setSelected(undefined)} />}
       </div>
     </div>
   );
@@ -95,8 +117,8 @@ export function EmbeddingMap({ params, layoutSwitch }: { params: URLSearchParams
 
 interface CanvasProps {
   points: MapPoint[];
-  colourBy: ColourBy;
-  colours: Palette;
+  colourOf: (p: MapPoint) => string;
+  clusters: Cluster[];
   lit: ReadonlySet<string>;
   selected?: MapPoint;
   onSelect: (p: MapPoint | undefined) => void;
@@ -112,15 +134,15 @@ interface Scene {
   frame?: number;
 }
 
-function PointCanvas({ points, colourBy, colours, lit, selected, onSelect }: CanvasProps) {
+function PointCanvas({ points, colourOf, clusters, lit, selected, onSelect }: CanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
   const scene = useRef<Scene>(undefined);
   const zoomer = useRef<ZoomBehavior<HTMLCanvasElement, unknown>>(undefined);
   // The draw and hit-test callbacks read the latest props through this ref, so the
   // canvas, zoom behaviour and listeners are set up once.
-  const props = useRef({ points, colourBy, colours, lit, selected, onSelect });
-  props.current = { points, colourBy, colours, lit, selected, onSelect };
+  const props = useRef({ points, colourOf, clusters, lit, selected, onSelect });
+  props.current = { points, colourOf, clusters, lit, selected, onSelect };
 
   // Large sessions first, so small ones stay visible on top of them.
   const order = useMemo(() => [...points].sort((a, b) => b.span_count - a.span_count), [points]);
@@ -135,7 +157,7 @@ function PointCanvas({ points, colourBy, colours, lit, selected, onSelect }: Can
     s.frame = requestAnimationFrame(() => {
       s.frame = undefined;
       const { ctx, width, height, transform } = s;
-      const { colourBy, colours, lit, selected } = props.current;
+      const { colourOf, clusters, lit, selected } = props.current;
       const grow = Math.min(3, Math.max(1, Math.sqrt(transform.k / s.fitK)));
       ctx.fillStyle = BACKGROUND;
       ctx.fillRect(0, 0, width, height);
@@ -151,8 +173,9 @@ function PointCanvas({ points, colourBy, colours, lit, selected, onSelect }: Can
       const everything = lit.size === props.current.points.length;
       if (!everything) for (const p of orderRef.current) if (!lit.has(p.session_id)) dot(p, DIM);
       ctx.globalAlpha = 0.85;
-      for (const p of orderRef.current) if (lit.has(p.session_id)) dot(p, colours.colourOf(keyOf(p, colourBy)));
+      for (const p of orderRef.current) if (lit.has(p.session_id)) dot(p, colourOf(p));
       ctx.globalAlpha = 1;
+      drawClusterLabels(ctx, clusters, transform, width, height, everything ? undefined : clusterHasLit(props.current.points, lit));
       for (const p of [s.hover, selected]) {
         if (!p) continue;
         const [x, y] = screen(p, transform);
@@ -280,7 +303,7 @@ function PointCanvas({ points, colourBy, colours, lit, selected, onSelect }: Can
     };
   }, []);
 
-  useEffect(draw, [points, colourBy, colours, lit, selected]);
+  useEffect(draw, [points, colourOf, clusters, lit, selected]);
 
   const onKey = (e: KeyboardEvent) => {
     const canvas = canvasRef.current;
@@ -319,6 +342,45 @@ function PointCanvas({ points, colourBy, colours, lit, selected, onSelect }: Can
       <button class="map-fit" onClick={fit} title="Fit the highlighted sessions in view (F)">Fit</button>
     </>
   );
+}
+
+function clusterHasLit(points: MapPoint[], lit: ReadonlySet<string>): Set<number> {
+  const out = new Set<number>();
+  for (const p of points) if (p.cluster >= 0 && lit.has(p.session_id)) out.add(p.cluster);
+  return out;
+}
+
+/** Topic labels at cluster centres, largest first, skipping any that would overlap one already placed. */
+function drawClusterLabels(
+  ctx: CanvasRenderingContext2D, clusters: Cluster[], t: ZoomTransform, width: number, height: number, litClusters?: ReadonlySet<number>,
+) {
+  if (clusters.length === 0) return;
+  const placed: [number, number, number, number][] = [];
+  const largest = Math.max(...clusters.map((c) => c.size));
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineJoin = "round";
+  for (const c of [...clusters].sort((a, b) => b.size - a.size)) {
+    if (!c.label) continue;
+    const x = t.applyX(c.x * WORLD);
+    const y = t.applyY(-c.y * WORLD);
+    const size = 11 + Math.round(4 * Math.sqrt(c.size / largest));
+    ctx.font = `600 ${size}px ui-sans-serif, system-ui, sans-serif`;
+    const w = ctx.measureText(c.label).width + 8;
+    const h = size + 6;
+    const box: [number, number, number, number] = [x - w / 2, y - h / 2, x + w / 2, y + h / 2];
+    if (box[2] < 0 || box[0] > width || box[3] < 0 || box[1] > height) continue;
+    if (placed.some((b) => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1])) continue;
+    placed.push(box);
+    const dim = litClusters !== undefined && !litClusters.has(c.id);
+    ctx.globalAlpha = dim ? 0.3 : 1;
+    ctx.strokeStyle = "rgba(13, 15, 18, 0.85)";
+    ctx.lineWidth = 4;
+    ctx.strokeText(c.label, x, y);
+    ctx.fillStyle = "#e6e8eb";
+    ctx.fillText(c.label, x, y);
+  }
+  ctx.globalAlpha = 1;
 }
 
 function tooltip(p: MapPoint): Node[] {
@@ -360,7 +422,7 @@ function Legend({ colours, colourBy, only, setOnly }: {
           <li>
             <button type="button" aria-pressed={pressed(otherKeys)} onClick={(e) => toggle(otherKeys, e)}>
               <span class="dot" style={{ background: colours.colourOf(otherKeys[0]!) }} />
-              {otherKeys.length} other {colourBy === "repo" ? "repos" : "harnesses"} <span class="muted">{otherCount}</span>
+              {otherKeys.length} other {colourBy === "repo" ? "repos" : colourBy === "cluster" ? "clusters" : "values"} <span class="muted">{otherCount}</span>
             </button>
           </li>
         )}
@@ -386,7 +448,7 @@ function PointPanel({ point, colour, onClose }: { point: MapPoint; colour: strin
       </div>
       <p>
         <a href={href("/session", { id: point.session_id })}>Open session</a> ·{" "}
-        <a href={href("/map", { session: point.session_id })}>Map this session</a>
+        <a href={href("/map", { focus: point.session_id })}>Show on timeline</a>
       </p>
     </aside>
   );

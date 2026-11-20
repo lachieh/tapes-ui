@@ -1,5 +1,5 @@
-import { infiniteQueryOptions, QueryClient, queryOptions } from "@tanstack/preact-query";
-import { api, ApiError, sessionTracesUpTo, type SessionTraces } from "./api";
+import { infiniteQueryOptions, keepPreviousData, QueryClient, queryOptions } from "@tanstack/preact-query";
+import { api, ApiError } from "./api";
 import type { MapPoints } from "./map/embedding";
 
 const MINUTE = 60_000;
@@ -45,10 +45,10 @@ export const spanQuery = (traceId: string, spanId: string) =>
     staleTime: Infinity,
   });
 
-export const searchQuery = (query: string) =>
+export const searchQuery = (query: string, topK = 25) =>
   queryOptions({
-    queryKey: ["search", query],
-    queryFn: ({ signal }) => api.search(query, 25, signal),
+    queryKey: ["search", query, topK],
+    queryFn: ({ signal }) => api.search(query, topK, signal),
     enabled: query !== "",
     staleTime: 5 * MINUTE,
   });
@@ -72,39 +72,34 @@ export const mapPointsQuery = queryOptions({
   refetchInterval: (query) => (query.state.data?.state === "computing" ? 10_000 : false),
 });
 
-export const sessionMapQuery = (ids: { session?: string; sessions: number; turns: number }, onProgress: (n: number, of: number) => void) =>
+export const sessionQuery = (id: string) =>
   queryOptions({
-    queryKey: ["map", "structure", ids.session ?? null, ids.sessions, ids.turns],
-    queryFn: ({ signal }) => loadSessionMap(ids, signal, onProgress),
-    staleTime: 5 * MINUTE,
+    queryKey: ["session", id],
+    queryFn: ({ signal }) => api.session(id, signal),
+    staleTime: MINUTE,
   });
 
-const MAX_SESSION_PAGES = 10;
-const CONCURRENT_SESSION_LOADS = 4;
+/** A window either ends now and follows the clock, or is fixed. */
+export type TimelineWindow = { length: number; until?: undefined } | { since: number; until: number };
 
-async function recentSessionsWithTurns(n: number, signal: AbortSignal): Promise<string[]> {
-  const ids: string[] = [];
-  let cursor: string | undefined;
-  for (let page = 0; page < MAX_SESSION_PAGES && ids.length < n; page++) {
-    const res = await api.sessions({ limit: 200, cursor }, signal);
-    ids.push(...res.items.filter((s) => s.rollup.turn_count > 0).map((s) => s.id));
-    if (!res.next_cursor) break;
-    cursor = res.next_cursor;
-  }
-  return ids.slice(0, n);
-}
+export const timelineQuery = (w: TimelineWindow) => {
+  const live = w.until === undefined;
+  return queryOptions({
+    queryKey: live ? ["timeline", "live", w.length] : ["timeline", w.since, w.until],
+    queryFn: ({ signal }) => {
+      const until = live ? Date.now() : w.until;
+      const since = live ? until - w.length : w.since;
+      return api.timeline(new Date(since).toISOString(), new Date(until).toISOString(), signal);
+    },
+    staleTime: live ? 15_000 : 10 * MINUTE,
+    refetchInterval: live ? 30_000 : false,
+    placeholderData: keepPreviousData,
+  });
+};
 
-async function loadSessionMap(
-  opts: { session?: string; sessions: number; turns: number },
-  signal: AbortSignal,
-  progress: (n: number, of: number) => void,
-): Promise<SessionTraces[]> {
-  const ids = opts.session ? [opts.session] : await recentSessionsWithTurns(opts.sessions, signal);
-  const out: SessionTraces[] = [];
-  for (let i = 0; i < ids.length; i += CONCURRENT_SESSION_LOADS) {
-    const batch = await Promise.all(ids.slice(i, i + CONCURRENT_SESSION_LOADS).map((id) => sessionTracesUpTo(id, opts.turns, signal)));
-    out.push(...batch);
-    progress(out.length, ids.length);
-  }
-  return out;
-}
+export const turnSpansQuery = (traceId: string) =>
+  queryOptions({
+    queryKey: ["timeline", "turn", traceId],
+    queryFn: ({ signal }) => api.turnSpans(traceId, signal),
+    staleTime: MINUTE,
+  });

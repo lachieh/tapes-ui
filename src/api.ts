@@ -1,4 +1,5 @@
 import { parseMapPoints } from "./map/embedding";
+import { parseTimeline, parseTurnSpans } from "./timeline/data";
 
 export interface Usage {
   input_tokens?: number;
@@ -148,20 +149,13 @@ export const api = {
     getJSON<Span>(`/v1/traces/${enc(traceId)}/spans/${enc(spanId)}`, {}, signal),
   search: (query: string, topK: number, signal?: AbortSignal) =>
     getJSON<{ results: SearchResult[] }>("/v1/cassettes/search/spans", { query, top_k: topK }, signal),
+  session: async (id: string, signal?: AbortSignal) => (await getJSON<{ session: Session }>(`/v1/sessions/${enc(id)}`, {}, signal)).session,
   mapPoints: async (signal?: AbortSignal) => parseMapPoints(await getJSON<unknown>("/v1/cassettes/map/points", {}, signal)),
+  timeline: async (since: string, until: string, signal?: AbortSignal) =>
+    parseTimeline(await getJSON<unknown>("/v1/cassettes/map/timeline", { since, until }, signal)),
+  turnSpans: async (traceId: string, signal?: AbortSignal) =>
+    parseTurnSpans(await getJSON<unknown>(`/v1/cassettes/map/timeline/turns/${enc(traceId)}`, {}, signal)),
 };
-
-export async function sessionTracesUpTo(id: string, maxTraces: number, signal?: AbortSignal): Promise<SessionTraces> {
-  let page = await api.sessionTraces(id, { limit: Math.min(maxTraces, 200) }, signal);
-  const traces = [...page.traces];
-  const links = [...(page.links ?? [])];
-  while (page.next_cursor && traces.length < maxTraces) {
-    page = await api.sessionTraces(id, { cursor: page.next_cursor, limit: Math.min(maxTraces - traces.length, 200) }, signal);
-    traces.push(...page.traces);
-    links.push(...(page.links ?? []));
-  }
-  return { session: page.session, traces: traces.slice(0, maxTraces), links, next_cursor: page.next_cursor };
-}
 
 export function firstOccurrenceById<T extends { id: string }>(items: T[]): T[] {
   const seen = new Set<string>();

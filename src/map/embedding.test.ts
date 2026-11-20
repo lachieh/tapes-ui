@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
-  countBy, harnessOf, isBackground, isLit, OTHER_COLOUR, palette, parseMapPoints, pointRadius, repoOf, robustBounds, titleOf,
+  availableColourBy, countBy, harnessOf, isBackground, isLit, keyOf, OTHER_COLOUR, palette, parseMapPoints, pointRadius, repoOf,
+  robustBounds, titleOf,
   type MapPoint,
 } from "./embedding";
 
-const point = (session_id: string, harness_id: string, cwd: string, title = "", span_count = 10): MapPoint => ({
+const point = (session_id: string, harness_id: string, cwd: string, title = "", span_count = 10, extra: Partial<MapPoint> = {}): MapPoint => ({
   session_id, x: 0.5, y: -1, span_count, harness_id, cwd, title, last_seen_at: "2026-11-20T00:00:00Z",
+  started_at: "", turn_count: 0, cost_usd: 0, tool_error_count: 0, prompt: "", cluster: -1, ...extra,
 });
 
 describe("parseMapPoints", () => {
@@ -14,8 +16,21 @@ describe("parseMapPoints", () => {
     points: [{ session_id: "a", x: 0.1, y: 0.2, span_count: 7, harness_id: "claude", cwd: "/p", title: "t", last_seen_at: "2026-11-20T00:00:00Z" }],
   };
 
-  it("accepts the documented 2-D response", () => {
-    expect(parseMapPoints(body)).toEqual(body);
+  it("accepts a v0.1 2-D response, filling the newer fields with defaults", () => {
+    expect(parseMapPoints(body)).toEqual({
+      ...body, clusters: [],
+      points: [{ ...body.points[0], started_at: "", turn_count: 0, cost_usd: 0, tool_error_count: 0, prompt: "", cluster: -1 }],
+    });
+  });
+
+  it("reads v0.2 fields and clusters", () => {
+    const parsed = parseMapPoints({
+      ...body,
+      points: [{ ...body.points[0], started_at: "2026-11-19T00:00:00Z", turn_count: 3, cost_usd: "1.5", tool_error_count: 2, prompt: "p", cluster: 4 }],
+      clusters: [{ id: 4, label: "dns · gateway", terms: ["dns", "gateway"], size: 9, x: 0.1, y: 0.2 }],
+    });
+    expect(parsed.points[0]).toMatchObject({ cost_usd: 1.5, cluster: 4, turn_count: 3 });
+    expect(parsed.clusters).toEqual([{ id: 4, label: "dns · gateway", terms: ["dns", "gateway"], size: 9, x: 0.1, y: 0.2 }]);
   });
 
   it("ignores the z of an older 3-D response", () => {
@@ -71,8 +86,9 @@ describe("isBackground", () => {
 });
 
 describe("titleOf", () => {
-  it("drops titles that are only an id fragment", () => {
+  it("replaces titles that are only an id fragment with the first prompt", () => {
     expect(titleOf(point("a", "claude", "/p", "01a187ad-d4b"))).toBe("");
+    expect(titleOf(point("a", "claude", "/p", "01a187ad-d4b", 3, { prompt: "Fix the DNS" }))).toBe("Fix the DNS");
     expect(titleOf(point("a", "claude", "/p", "8c2855f5c0e1"))).toBe("");
     expect(titleOf(point("a", "claude", "/p", "Fix lan-dns"))).toBe("Fix lan-dns");
   });
@@ -110,9 +126,13 @@ describe("isLit", () => {
     expect([a, b].map((p) => isLit(p, "harness", { only: new Set(["claude"]), text: "" }))).toEqual([true, false]);
   });
 
-  it("matches text against title and directory, case-insensitively", () => {
+  it("matches text against title, prompt and directory, case-insensitively", () => {
     expect([a, b].map((p) => isLit(p, "harness", { text: " LAN-dns " }))).toEqual([true, false]);
     expect([a, b].map((p) => isLit(p, "harness", { text: "tapes-ui" }))).toEqual([false, true]);
+  });
+
+  it("keeps only sessions a semantic search found", () => {
+    expect([a, b].map((p) => isLit(p, "harness", { text: "", sessions: new Set(["b"]) }))).toEqual([false, true]);
   });
 });
 
@@ -143,5 +163,34 @@ describe("countBy", () => {
   it("counts keys largest first", () => {
     const pts = [point("a", "claude", "/p"), point("b", "codex", "/p"), point("c", "codex", "/p"), point("d", "", "/p")];
     expect(countBy(pts, harnessOf)).toEqual([["codex", 2], ["claude", 1], ["unknown", 1]]);
+  });
+});
+
+describe("ordered dimensions", () => {
+  const now = Date.parse("2026-11-20T12:00:00Z");
+  const ctx = { now, clusterLabels: new Map([[2, "dns · gateway"]]) };
+
+  it("buckets by local time of day, cost, recency and errors", () => {
+    const local = new Date(2026, 10, 20, 14, 30).toISOString();
+    const p = point("a", "claude", "/p", "t", 10, { started_at: local, cost_usd: 2.5, tool_error_count: 1, last_seen_at: "2026-11-18T12:00:00Z" });
+    expect(keyOf(p, "hour", ctx)).toBe("12–15");
+    expect(keyOf(p, "cost", ctx)).toBe("$1–$10");
+    expect(keyOf(p, "recency", ctx)).toBe("this week");
+    expect(keyOf(p, "errors", ctx)).toBe("tool errors");
+  });
+
+  it("names clusters by label and leaves noise out", () => {
+    expect(keyOf(point("a", "c", "/p", "", 3, { cluster: 2 }), "cluster", ctx)).toBe("dns · gateway");
+    expect(keyOf(point("a", "c", "/p", "", 3, { cluster: -1 }), "cluster", ctx)).toBe("(no cluster)");
+  });
+
+  it("lists ordered buckets in their natural order, not by size", () => {
+    const pts = [0.05, 5, 5, 5, 50].map((c, i) => point(`p${i}`, "claude", "/p", "", 3, { cost_usd: c }));
+    expect(palette(pts, "cost", ctx).named.map(([k]) => k)).toEqual(["under $0.10", "$1–$10", "$10 and up"]);
+  });
+
+  it("offers only the dimensions the data supports", () => {
+    const old = { computed_at: "", model: "", method: "", session_count: 1, points: [point("a", "claude", "/p")], clusters: [] };
+    expect(availableColourBy(old)).toEqual(["repo", "harness", "hour", "recency"]);
   });
 });

@@ -90,7 +90,11 @@ export function SessionDetail({ id, turn }: { id: string; turn?: string }) {
         </div>
         <div class="muted">
           {session.rollup.turn_count} turns · {cost(session.rollup.usage.cost_usd)} · started {ago(session.started_at)}
-          {session.live && " · live"} · <a href={href("/map", { session: session.id })}>view on the map</a>
+          {session.live && " · live"} · <a href={href("/map", {
+            focus: session.id,
+            since: new Date(Date.parse(session.started_at) - 60_000).toISOString(),
+            until: new Date(Math.max(Date.parse(session.last_seen_at), Date.parse(session.started_at) + 60_000) + 60_000).toISOString(),
+          })}>show on timeline</a>
         </div>
       </header>
       {traces.length === 0 && <p class="muted">No turns derived for this session yet.</p>}
