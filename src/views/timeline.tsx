@@ -94,9 +94,9 @@ export function TimelineView({ params, layoutSwitch }: { params: URLSearchParams
           value={text}
           onChange={(e) => set({ q: e.currentTarget.value || undefined })}
         />
-        <label title={`Sessions with one turn of ${TINY_SESSION_SPANS} spans or fewer, such as title and branch-name generators`}>
+        <label title={`Sessions with one turn of ${TINY_SESSION_SPANS} spans or fewer (or under 30 seconds when spans are not counted yet), such as title and branch-name generators`}>
           <input type="checkbox" checked={showTiny} onChange={(e) => set({ all: e.currentTarget.checked ? "1" : undefined })} /> Tiny sessions{" "}
-          <span class="muted">{tinyCount}</span>
+          {data.data && <span class="muted">{tinyCount}</span>}
         </label>
         <span class="toolbar-status muted" aria-live="polite">
           {(data.isPending || needsFocusWindow) && "Loading timeline…"}
@@ -211,7 +211,7 @@ function Lanes({ timeline, text, focus, openTurn, onTurn, onZoom }: {
               {ticks(since, until, Math.max(3, Math.floor(width / 110))).map((t) => (
                 <g transform={`translate(${x(t)},0)`}>
                   <line y1={16} y2={24} stroke="var(--line)" />
-                  <text y={12} text-anchor="middle" class="tl-tick">{fmtTime(t, until - since)}</text>
+                  <text y={12} text-anchor={x(t) < 40 ? "start" : x(t) > width - 40 ? "end" : "middle"} class="tl-tick">{fmtTime(t, until - since)}</text>
                 </g>
               ))}
             </svg>

@@ -184,10 +184,15 @@ export function sessionTitle(s: TimelineSession): string {
   return s.turns.find((t) => !t.synthetic && t.prompt.trim())?.prompt.trim() ?? "";
 }
 
-/** Title and branch-name generators run one turn of five spans; such one-shot sessions crowd the timeline. */
+/** Title and branch-name generators run one short turn of five spans; such one-shot sessions crowd the timeline. */
 export const TINY_SESSION_SPANS = 5;
-export const isTinySession = (s: TimelineSession) =>
-  s.turn_count <= 1 && s.turns.every((t) => t.span_count !== undefined) && s.turns.reduce((n, t) => n + (t.span_count ?? 0), 0) <= TINY_SESSION_SPANS;
+export const TINY_SESSION_MS = 30_000;
+export function isTinySession(s: TimelineSession): boolean {
+  if (s.turn_count > 1) return false;
+  // Span counts can be missing when the cassette ran out of time; a short single turn is the fallback signal.
+  if (s.turns.every((t) => t.span_count !== undefined)) return s.turns.reduce((n, t) => n + (t.span_count ?? 0), 0) <= TINY_SESSION_SPANS;
+  return s.turns.every((t) => t.ended - t.started < TINY_SESSION_MS);
+}
 
 /* ---------- Lanes ---------- */
 

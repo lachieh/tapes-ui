@@ -124,5 +124,8 @@ describe("isTinySession", () => {
     expect(isTinySession({ ...session("a", "/p", T0), turn_count: 1, turns: [turn(5)] })).toBe(true);
     expect(isTinySession({ ...session("b", "/p", T0), turn_count: 1, turns: [turn(9)] })).toBe(false);
     expect(isTinySession({ ...session("c", "/p", T0), turn_count: 3, turns: [turn(1)] })).toBe(false);
+    const uncounted = (ms: number) => ({ ...turn(0), span_count: undefined, ended: T0 + ms });
+    expect(isTinySession({ ...session("d", "/p", T0), turn_count: 1, turns: [uncounted(8_000)] })).toBe(true);
+    expect(isTinySession({ ...session("e", "/p", T0), turn_count: 1, turns: [uncounted(5 * MIN)] })).toBe(false);
   });
 });
