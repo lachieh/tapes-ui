@@ -355,7 +355,7 @@ function LaneRow({ lane, width, x, maxCost, dim, focused, openTurn, onTurn, show
                   onPointerMove={(e) => showTip(e, <TurnTip session={s} turn={t} />)}
                   onPointerLeave={hideTip}
                 />
-                {!error && t.error_span_count > 0 && <circle cx={tx + w} cy={mid - h / 2 - 1} r={1.75} fill={ERROR} aria-hidden="true" />}
+                {!error && (t.error_span_count ?? 0) > 0 && <circle cx={tx + w} cy={mid - h / 2 - 1} r={1.75} fill={ERROR} aria-hidden="true" />}
                 </>
               );
             })}
@@ -375,7 +375,8 @@ function TurnTip({ session, turn }: { session: TimelineSession; turn: TimelineTu
         {count(turn.input_tokens + turn.output_tokens)} tokens
       </span>
       <span class="muted">
-        {turn.span_count} spans{turn.error_span_count > 0 && <span class="error"> · {turn.error_span_count} errors</span>} · {session.harness_id}
+        {turn.span_count === undefined ? "spans not counted yet" : `${turn.span_count} spans`}
+        {(turn.error_span_count ?? 0) > 0 && <span class="error"> · {turn.error_span_count} errors</span>} · {session.harness_id}
       </span>
     </>
   );

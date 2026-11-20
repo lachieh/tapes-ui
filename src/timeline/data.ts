@@ -9,8 +9,9 @@ export interface TimelineTurn {
   cost_usd: number;
   input_tokens: number;
   output_tokens: number;
-  span_count: number;
-  error_span_count: number;
+  /** Absent when the cassette ran out of time counting this turn's spans. */
+  span_count?: number;
+  error_span_count?: number;
   prompt: string;
 }
 
@@ -141,8 +142,8 @@ export function parseTimeline(body: unknown): Timeline {
             cost_usd: num(t, "cost_usd", at),
             input_tokens: num(t, "input_tokens", at),
             output_tokens: num(t, "output_tokens", at),
-            span_count: num(t, "span_count", at),
-            error_span_count: num(t, "error_span_count", at),
+            span_count: t.span_count === null || t.span_count === undefined ? undefined : num(t, "span_count", at),
+            error_span_count: t.error_span_count === null || t.error_span_count === undefined ? undefined : num(t, "error_span_count", at),
             prompt: str(t, "prompt", at),
           };
         }),
@@ -186,7 +187,7 @@ export function sessionTitle(s: TimelineSession): string {
 /** Title and branch-name generators run one turn of five spans; such one-shot sessions crowd the timeline. */
 export const TINY_SESSION_SPANS = 5;
 export const isTinySession = (s: TimelineSession) =>
-  s.turn_count <= 1 && s.turns.reduce((n, t) => n + t.span_count, 0) <= TINY_SESSION_SPANS;
+  s.turn_count <= 1 && s.turns.every((t) => t.span_count !== undefined) && s.turns.reduce((n, t) => n + (t.span_count ?? 0), 0) <= TINY_SESSION_SPANS;
 
 /* ---------- Lanes ---------- */
 

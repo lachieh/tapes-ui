@@ -25,9 +25,10 @@ export function TurnPanel({ session, turn, onClose }: { session: TimelineSession
           <p class="tl-prompt">{turn.prompt || (turn.synthetic ? "Synthetic turn" : "No prompt")}</p>
           <span class="muted">
             {new Date(turn.started).toLocaleString()} · {duration((turn.ended - turn.started) * MS)} · {cost(turn.cost_usd)} ·{" "}
-            {count(turn.input_tokens)} in / {count(turn.output_tokens)} out · {turn.span_count} spans
+            {count(turn.input_tokens)} in / {count(turn.output_tokens)} out
+            {spans.data ? ` · ${spans.data.spans.length} spans` : turn.span_count !== undefined && ` · ${turn.span_count} spans`}
             {rows.length > 1 && ` · ${rows.length - 1} subagent threads`}
-            {turn.error_span_count > 0 && <span class="error"> · {turn.error_span_count} errors</span>}
+            {(turn.error_span_count ?? 0) > 0 && <span class="error"> · {turn.error_span_count} errors</span>}
           </span>
         </div>
         <span class="tl-panel-actions">
@@ -35,7 +36,7 @@ export function TurnPanel({ session, turn, onClose }: { session: TimelineSession
           <button class="close" onClick={onClose} aria-label="Close turn">×</button>
         </span>
       </header>
-      {spans.isPending && <p class="muted">Loading spans…</p>}
+      {spans.isPending && <p class="muted">Loading spans… a turn with thousands of spans can take a minute.</p>}
       {spans.error && <QueryError error={spans.error} retry={() => spans.refetch()} />}
       {spans.data && rows.length > 0 && <Gantt rows={rows} />}
       {spans.data && (
